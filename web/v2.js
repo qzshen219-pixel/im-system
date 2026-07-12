@@ -107,6 +107,7 @@ function enterChat() {
     connectWebSocket();
     loadFriends();
     loadPendingFriends();
+    requestNotificationPermission();
 }
 
 // ==================== WebSocket ====================
@@ -227,7 +228,30 @@ function receiveMessage(data) {
     });
     
     renderConversations();
-    if (currentTarget === fromId) renderMessages(fromId);
+    if (currentTarget === fromId) {
+        renderMessages(fromId);
+    } else {
+        // 显示浏览器通知
+        showToast(`收到来自 ${data.from_name || '用户' + fromId} 的新消息`);
+        showBrowserNotification(data.from_name || '用户' + fromId, content);
+    }
+}
+
+// ==================== 浏览器通知 ====================
+function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
+
+function showBrowserNotification(title, body) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, {
+            body: body,
+            icon: '/favicon.ico',
+            tag: 'im-notification'
+        });
+    }
 }
 
 function receiveGroupMessage(data) {
@@ -445,6 +469,30 @@ async function recallMessage(messageId) {
     } catch (e) { showToast('网络错误', 'error'); }
 }
 
+// ==================== 消息置顶 ====================
+function togglePin(messageId) {
+    const userId = currentTarget < 0 ? -currentTarget : currentTarget;
+    if (!messages[userId]) return;
+    
+    const msg = messages[userId].find(m => m.id === messageId);
+    if (!msg) return;
+    
+    // 切换置顶状态
+    msg.pinned = !msg.pinned;
+    
+    // 发送到服务器
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'pin',
+            msg_id: messageId,
+            pinned: msg.pinned
+        }));
+    }
+    
+    showToast(msg.pinned ? '消息已置顶' : '取消置顶');
+    renderMessages(userId);
+}
+
 // ==================== 渲染函数 ====================
 function renderConversations() {
     const list = document.getElementById('conv-list');
@@ -513,14 +561,15 @@ function renderMessages(userId) {
         const readStatus = m.self ? (m.read ? '<span class="read-status read">已读</span>' : '<span class="read-status">已发送</span>') : '';
         const recallBtn = m.self && m.content && !m.content.startsWith('[消息已撤回]') ? 
             `<button class="btn-recall" onclick="recallMessage(${m.id})">撤回</button>` : '';
+        const pinBtn = `<button class="btn-pin" onclick="togglePin(${m.id})" title="${m.pinned ? '取消置顶' : '置顶'}">📌</button>`;
         
         return `
-        <div class="message-item ${m.self ? 'self' : ''}">
+        <div class="message-item ${m.self ? 'self' : ''} ${m.pinned ? 'pinned' : ''}">
             <div class="avatar">${m.self ? (currentUser.nickname || currentUser.username)[0] : (m.from_name ? m.from_name[0] : 'U')}</div>
             <div class="content">
                 ${!m.self && m.from_name ? `<div class="sender-name">${m.from_name}</div>` : ''}
                 <div class="bubble">${messageContent}</div>
-                <div class="time">${m.time} ${readStatus} ${recallBtn}</div>
+                <div class="time">${m.time} ${readStatus} ${recallBtn} ${pinBtn}</div>
             </div>
         </div>`;
     }).join('');

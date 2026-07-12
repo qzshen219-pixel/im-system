@@ -28,12 +28,14 @@ class MessageHandler;
 
 class UserManager;
 class MessageHandler;
+class RedisClient;
 
 class WsServer {
 public:
     WsServer(int port, 
              std::shared_ptr<UserManager> userManager,
-             std::shared_ptr<MessageHandler> msgHandler);
+             std::shared_ptr<MessageHandler> msgHandler,
+             std::shared_ptr<RedisClient> redis);
     ~WsServer();
 
     // 启动服务器
@@ -73,6 +75,7 @@ private:
 
     std::shared_ptr<UserManager> m_userManager;
     std::shared_ptr<MessageHandler> m_msgHandler;
+    std::shared_ptr<RedisClient> m_redis;
 
     std::thread m_thread;
 };
