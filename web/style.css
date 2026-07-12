@@ -652,6 +652,26 @@ body {
     background: var(--red-bg);
 }
 
+.btn-pin {
+    padding: 2px 6px;
+    background: transparent;
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: var(--transition);
+}
+
+.btn-pin:hover {
+    opacity: 1;
+    transform: scale(1.2);
+}
+
+.message-item.pinned {
+    border-left: 3px solid var(--primary);
+    background: var(--primary-bg);
+}
+
 /* 输入区域 */
 .input-area {
     padding: 16px 20px;

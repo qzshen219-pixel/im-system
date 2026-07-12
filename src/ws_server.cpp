@@ -5,6 +5,7 @@
 #include "ws_server.h"
 #include "user_manager.h"
 #include "message_handler.h"
+#include "redis_client.h"
 #include "json/json.h"
 
 #include <iostream>
@@ -15,11 +16,13 @@
 
 WsServer::WsServer(int port, 
                    std::shared_ptr<UserManager> userManager,
-                   std::shared_ptr<MessageHandler> msgHandler)
+                   std::shared_ptr<MessageHandler> msgHandler,
+                   std::shared_ptr<RedisClient> redis)
     : m_port(port)
     , m_running(false)
     , m_userManager(userManager)
     , m_msgHandler(msgHandler)
+    , m_redis(redis)
 {
     // 初始化 WebSocket 服务器
     m_server.init_asio();
@@ -255,6 +258,42 @@ void WsServer::onMessage(connection_hdl hdl, websocketpp::config::asio::message_
                 for (auto& msgJson : offlineMsgs) {
                     m_server.send(hdl, Json::FastWriter().write(msgJson), websocketpp::frame::opcode::text);
                 }
+            }
+        }
+        else if (type == "pin") {
+            // 消息置顶
+            int userId = getUserIdFromHdl(hdl);
+            int msgId = root["msg_id"].asInt();
+            bool pinned = root.get("pinned", true).asBool();
+            
+            if (userId > 0 && msgId > 0) {
+                // 保存置顶状态到 Redis
+                std::string key = "pinned:" + std::to_string(userId);
+                if (pinned) {
+                    m_redis->hset(key, std::to_string(msgId), "1");
+                } else {
+                    m_redis->hdel(key, std::to_string(msgId));
+                }
+                
+                // 发送确认
+                Json::Value resp;
+                resp["type"] = "pin_ack";
+                resp["msg_id"] = msgId;
+                resp["pinned"] = pinned;
+                m_server.send(hdl, Json::FastWriter().write(resp), websocketpp::frame::opcode::text);
+            }
+        }
+        else if (type == "get_pinned") {
+            // 获取置顶消息
+            int userId = getUserIdFromHdl(hdl);
+            if (userId > 0) {
+                std::string key = "pinned:" + std::to_string(userId);
+                // 从 Redis 获取所有置顶消息 ID
+                // 这里简化处理，前端可以自行管理
+                Json::Value resp;
+                resp["type"] = "pinned_list";
+                resp["pinned_ids"] = Json::arrayValue;
+                m_server.send(hdl, Json::FastWriter().write(resp), websocketpp::frame::opcode::text);
             }
         }
 

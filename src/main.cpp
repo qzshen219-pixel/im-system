@@ -97,7 +97,7 @@ int main(int argc, char* argv[]) {
         g_httpServer->start();
 
         // 创建 WebSocket 服务器
-        g_wsServer = std::make_shared<WsServer>(port, userManager, msgHandler);
+        g_wsServer = std::make_shared<WsServer>(port, userManager, msgHandler, redis);
         
         std::cout << "[OK] 服务器启动成功" << std::endl;
         std::cout << "  HTTP API: http://localhost:8080" << std::endl;
