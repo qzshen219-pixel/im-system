@@ -1,0 +1,7 @@
+/mnt/e/distributed-cloud-disk/im-system/build/CMakeFiles/im-server.dir
+/mnt/e/distributed-cloud-disk/im-system/build/CMakeFiles/edit_cache.dir
+/mnt/e/distributed-cloud-disk/im-system/build/CMakeFiles/rebuild_cache.dir
+/mnt/e/distributed-cloud-disk/im-system/build/CMakeFiles/list_install_components.dir
+/mnt/e/distributed-cloud-disk/im-system/build/CMakeFiles/install.dir
+/mnt/e/distributed-cloud-disk/im-system/build/CMakeFiles/install/local.dir
+/mnt/e/distributed-cloud-disk/im-system/build/CMakeFiles/install/strip.dir

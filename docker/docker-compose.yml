@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  im-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: im-server
+    ports:
+      - "8001:8001"
+      - "8080:8080"
+    volumes:
+      - im-data:/var/lib/mysql
+      - im-redis:/data
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+
+volumes:
+  im-data:
+    driver: local
+  im-redis:
+    driver: local

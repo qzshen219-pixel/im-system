@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即时通讯</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 登录页面 -->
+    <div id="page-login" class="login-page">
+        <button class="theme-toggle" onclick="toggleTheme()" title="切换主题" id="themeBtn">🌙</button>
+        <div class="login-box">
+            <div class="login-logo">
+                <div class="logo-icon">💬</div>
+                <h2>即时通讯</h2>
+                <p class="subtitle">安全、快速、稳定的聊天体验</p>
+            </div>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="showTab('login')">登录</button>
+                <button class="auth-tab" onclick="showTab('register')">注册</button>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="input-group">
+                    <span class="input-icon">👤</span>
+                    <input type="text" id="login-user" placeholder="用户名" autocomplete="username">
+                </div>
+                <div class="input-group">
+                    <span class="input-icon">🔒</span>
+                    <input type="password" id="login-pass" placeholder="密码" autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-primary">登录</button>
+            </form>
+
+            <form id="registerForm" style="display:none" onsubmit="handleRegister(event)">
+                <div class="input-group">
+                    <span class="input-icon">👤</span>
+                    <input type="text" id="reg-user" placeholder="用户名" autocomplete="username">
+                </div>
+                <div class="input-group">
+                    <span class="input-icon">🔒</span>
+                    <input type="password" id="reg-pass" placeholder="密码" autocomplete="new-password">
+                </div>
+                <div class="input-group">
+                    <span class="input-icon">🔒</span>
+                    <input type="password" id="reg-pass2" placeholder="确认密码" autocomplete="new-password">
+                </div>
+                <div class="input-group">
+                    <span class="input-icon">😊</span>
+                    <input type="text" id="reg-nick" placeholder="昵称（选填）">
+                </div>
+                <button type="submit" class="btn-primary">注册</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 聊天页面 -->
+    <div id="page-chat" class="chat-page hidden">
+        <div class="chat-container">
+            <!-- 左侧会话列表 -->
+            <div class="sidebar-left">
+                <div class="sidebar-header">
+                    <div class="user-info" onclick="showProfile()" style="cursor:pointer;">
+                        <div class="avatar current-user-avatar" id="currentAvatar"></div>
+                        <div>
+                            <span id="current-user"></span>
+                            <div class="user-id" id="userIdDisplay">ID: -</div>
+                        </div>
+                    </div>
+                    <div class="header-actions">
+                        <button class="btn-icon" onclick="toggleTheme()" title="切换主题" id="themeBtn">🌙</button>
+                        <button class="btn-icon" onclick="handleLogout()" title="退出">🚪</button>
+                    </div>
+                </div>
+                
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="搜索..." oninput="filterConversations()">
+                </div>
+
+                <div class="conversation-list" id="conv-list">
+                    <div class="empty-state">暂无会话</div>
+                </div>
+            </div>
+
+            <!-- 中间消息区域 -->
+            <div class="message-area">
+                <div class="message-header" id="chat-target">
+                    <span>选择会话开始聊天</span>
+                    <div class="message-search">
+                        <input type="text" id="msgSearch" placeholder="搜索消息..." oninput="searchMessages()">
+                    </div>
+                </div>
+                
+                <div class="message-list" id="msg-list">
+                    <div class="empty-state">
+                        <div class="empty-icon">💬</div>
+                        <p>选择左侧会话开始聊天</p>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div class="typing-indicator" id="typing-indicator" style="display:none;"></div>
+                    <div class="input-toolbar">
+                        <button class="toolbar-btn" onclick="toggleEmojiPicker()" title="表情" id="emojiBtn">😊</button>
+                        <button class="toolbar-btn" onclick="document.getElementById('file-input').click()" title="发送文件">📎</button>
+                        <input type="file" id="file-input" style="display:none" onchange="handleFileUpload(event)">
+                    </div>
+                    <div class="emoji-picker" id="emoji-picker" style="display:none;">
+                        <div class="emoji-grid">
+                            <span onclick="insertEmoji('😊')">😊</span>
+                            <span onclick="insertEmoji('😂')">😂</span>
+                            <span onclick="insertEmoji('❤️')">❤️</span>
+                            <span onclick="insertEmoji('👍')">👍</span>
+                            <span onclick="insertEmoji('🎉')">🎉</span>
+                            <span onclick="insertEmoji('🔥')">🔥</span>
+                            <span onclick="insertEmoji('💯')">💯</span>
+                            <span onclick="insertEmoji('✨')">✨</span>
+                            <span onclick="insertEmoji('🙏')">🙏</span>
+                            <span onclick="insertEmoji('😍')">😍</span>
+                            <span onclick="insertEmoji('🤔')">🤔</span>
+                            <span onclick="insertEmoji('😎')">😎</span>
+                            <span onclick="insertEmoji('😢')">😢</span>
+                            <span onclick="insertEmoji('😡')">😡</span>
+                            <span onclick="insertEmoji('🥳')">🥳</span>
+                            <span onclick="insertEmoji('💪')">💪</span>
+                            <span onclick="insertEmoji('👏')">👏</span>
+                            <span onclick="insertEmoji('🤝')">🤝</span>
+                            <span onclick="insertEmoji('👋')">👋</span>
+                            <span onclick="insertEmoji('❤️‍🔥')">❤️‍🔥</span>
+                            <span onclick="insertEmoji('👀')">👀</span>
+                            <span onclick="insertEmoji('🤔')">🤔</span>
+                            <span onclick="insertEmoji('😏')">😏</span>
+                            <span onclick="insertEmoji('🤗')">🤗</span>
+                            <span onclick="insertEmoji('🙄')">🙄</span>
+                            <span onclick="insertEmoji('😴')">😴</span>
+                            <span onclick="insertEmoji('🤯')">🤯</span>
+                            <span onclick="insertEmoji('🥺')">🥺</span>
+                            <span onclick="insertEmoji('😂')">😂</span>
+                            <span onclick="insertEmoji('🤣')">🤣</span>
+                        </div>
+                    </div>
+                    <div class="input-main">
+                        <textarea id="msg-input" placeholder="输入消息..." disabled></textarea>
+                        <button class="btn-send" id="btn-send" onclick="sendMessage()" disabled>
+                            <span>发送</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧联系人面板 -->
+            <div class="sidebar-right">
+                <div class="sidebar-header">
+                    <span>联系人</span>
+                </div>
+                
+                <div class="new-chat-section">
+                    <input type="number" id="new-chat-user" placeholder="用户ID" min="1">
+                    <button onclick="startNewChat()">私聊</button>
+                </div>
+                
+                <div class="new-chat-section">
+                    <input type="text" id="new-group-name" placeholder="群组名称">
+                    <button onclick="createGroup()">建群</button>
+                </div>
+                
+                <div class="new-chat-section">
+                    <input type="number" id="add-friend-id" placeholder="好友ID" min="1">
+                    <button onclick="addFriend()">加好友</button>
+                </div>
+
+                <div class="contact-section" id="pending-section" style="display:none;">
+                    <div class="section-title">好友申请 <span id="pending-count"></span></div>
+                    <div class="contact-items" id="pending-items"></div>
+                </div>
+
+                <div class="contact-section">
+                    <div class="section-title">好友</div>
+                    <div class="contact-items" id="friend-items">
+                        <div class="empty-state small">暂无好友</div>
+                    </div>
+                </div>
+
+                <div class="contact-section">
+                    <div class="section-title">群组</div>
+                    <div class="contact-items" id="group-items">
+                        <div class="empty-state small">暂无群组</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div id="toast" class="toast"></div>
+
+    <script src="v2.js"></script>
+</body>
+</html>

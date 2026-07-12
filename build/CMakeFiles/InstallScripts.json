@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/mnt/e/distributed-cloud-disk/im-system/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
