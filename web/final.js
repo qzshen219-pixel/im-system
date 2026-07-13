@@ -318,21 +318,21 @@ function sendMessage() {
     messages[currentTarget].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true
     });
-    
+
     if (!conversations[currentTarget]) {
         conversations[currentTarget] = {
             id: currentTarget,
             name: '用户' + currentTarget,
             lastMsg: content,
-            time: formatTime(new Date()),
+            time: new Date().toISOString(),
             unread: 0
         };
     } else {
         conversations[currentTarget].lastMsg = content;
-        conversations[currentTarget].time = formatTime(new Date());
+        conversations[currentTarget].time = new Date().toISOString();
     }
     
     renderMessages(currentTarget);
@@ -353,7 +353,7 @@ function sendGroupMessage() {
     messages[groupId].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true,
         from_name: currentUser.nickname || currentUser.username
     });
@@ -411,7 +411,7 @@ function handleFileUpload(event) {
                     content: displayContent,
                     file_id: data.data.file_id,
                     file_type: isImage ? 'image' : 'file',
-                    time: formatTime(new Date()),
+                    time: new Date().toISOString(),
                     self: true
                 });
                 renderMessages(targetId);
@@ -773,6 +773,10 @@ function renderGroups() {
             <button class="btn-recall" onclick="event.stopPropagation();leaveGroup(${g.id}, '${g.name}')" title="退出群组">✕</button>
         </div>
     `).join('');
+
+    // 显示提示信息
+    const ids = Object.values(groups).map(g => g.id).join(', ');
+    showToast(`你的群组ID: ${ids}`, 'info');
 }
 
 // ==================== 群组管理 ====================

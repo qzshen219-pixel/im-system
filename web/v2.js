@@ -300,7 +300,7 @@ function sendMessage() {
     messages[currentTarget].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true
     });
     
@@ -309,7 +309,7 @@ function sendMessage() {
             id: currentTarget,
             name: '用户' + currentTarget,
             lastMsg: content,
-            time: formatTime(new Date()),
+            time: new Date().toISOString(),
             unread: 0
         };
     } else {
@@ -335,7 +335,7 @@ function sendGroupMessage() {
     messages[groupId].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true,
         from_name: currentUser.nickname || currentUser.username
     });
@@ -393,7 +393,7 @@ function handleFileUpload(event) {
                     content: displayContent,
                     file_id: data.data.file_id,
                     file_type: isImage ? 'image' : 'file',
-                    time: formatTime(new Date()),
+                    time: new Date().toISOString(),
                     self: true
                 });
                 renderMessages(targetId);
