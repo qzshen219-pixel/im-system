@@ -35,6 +35,9 @@ public:
     bool execute();
 
 private:
+    // 确保连接有效
+    bool ensureConnection();
+
     std::string m_host;
     std::string m_user;
     std::string m_password;
