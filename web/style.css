@@ -426,6 +426,19 @@ body {
     padding: 0 6px;
 }
 
+.unread-badge {
+    background: var(--red);
+    color: white;
+    font-size: 11px;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+}
+
 /* ==================== 消息区域 ==================== */
 .message-area {
     flex: 1;
@@ -647,6 +660,25 @@ body {
 }
 
 .btn-recall:hover {
+    color: var(--red);
+    border-color: var(--red);
+    background: var(--red-bg);
+}
+
+.btn-remove-friend {
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--text3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    cursor: pointer;
+    transition: var(--transition);
+    margin-left: 6px;
+    flex-shrink: 0;
+}
+
+.btn-remove-friend:hover {
     color: var(--red);
     border-color: var(--red);
     background: var(--red-bg);
@@ -893,6 +925,12 @@ body {
 
 .contact-item .status.online {
     background: var(--green);
+}
+
+.group-id {
+    font-size: 11px;
+    color: var(--text3);
+    margin-left: 8px;
 }
 
 /* ==================== 对话框 ==================== */

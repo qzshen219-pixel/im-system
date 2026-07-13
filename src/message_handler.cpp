@@ -26,10 +26,10 @@ MessageHandler::~MessageHandler()
 
 // 处理单聊消息
 void MessageHandler::handleChatMessage(int fromUserId, int toUserId,
-                                       const std::string& content, int msgType)
+                                       const std::string& content, int msgType, int fileId)
 {
     // 1. 持久化到 MySQL
-    int msgId = saveMessage(fromUserId, toUserId, 0, content, msgType);
+    int msgId = saveMessage(fromUserId, toUserId, 0, content, msgType, fileId);
 
     // 2. 构建消息 JSON
     Json::Value msgJson;
@@ -213,15 +213,16 @@ std::vector<Json::Value> MessageHandler::getHistoryMessages(int userId, int targ
 
 // 保存消息到 MySQL
 int MessageHandler::saveMessage(int fromUserId, int toUserId, int groupId,
-                                const std::string& content, int msgType)
+                                const std::string& content, int msgType, int fileId)
 {
-    std::string sql = "INSERT INTO messages (from_user_id, to_user_id, group_id, content, msg_type) "
-        "VALUES (" + std::to_string(fromUserId) + ", " 
-        + std::to_string(toUserId) + ", " 
+    std::string sql = "INSERT INTO messages (from_user_id, to_user_id, group_id, content, msg_type, file_id) "
+        "VALUES (" + std::to_string(fromUserId) + ", "
+        + std::to_string(toUserId) + ", "
         + std::to_string(groupId) + ", '"
-        + content + "', " 
-        + std::to_string(msgType) + ")";
-    
+        + content + "', "
+        + std::to_string(msgType) + ", "
+        + std::to_string(fileId) + ")";
+
     m_mysql->query(sql);
     return m_mysql->insertId();
 }

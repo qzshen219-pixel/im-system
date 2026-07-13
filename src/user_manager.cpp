@@ -164,14 +164,30 @@ bool UserManager::getUserInfo(int userId, std::string& username, std::string& ni
     std::string sql = "SELECT username, nickname FROM users WHERE id = " + std::to_string(userId);
     m_mysql->query(sql);
     auto result = m_mysql->getResult();
-    
+
     if (result.empty()) {
         return false;
     }
-    
+
     username = result[0][0];
     nickname = result[0][1];
     return true;
+}
+
+std::vector<int> UserManager::getFriends(int userId)
+{
+    std::vector<int> friends;
+    std::string sql = "SELECT friend_id FROM friends WHERE user_id = " + std::to_string(userId) + " AND status = 'accepted' "
+        "UNION "
+        "SELECT user_id FROM friends WHERE friend_id = " + std::to_string(userId) + " AND status = 'accepted'";
+    m_mysql->query(sql);
+    auto result = m_mysql->getResult();
+
+    for (auto& row : result) {
+        friends.push_back(std::stoi(row[0]));
+    }
+
+    return friends;
 }
 
 // 生成 Token

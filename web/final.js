@@ -6,6 +6,7 @@ let conversations = {};
 let messages = {};
 let groups = {};
 let searchTimer = null;
+let unreadCounts = {};
 
 // ==================== 页面切换 ====================
 function showPage(id) {
@@ -108,6 +109,7 @@ function enterChat() {
     loadFriends();
     loadPendingFriends();
     loadFolders();
+    loadGroups();
     requestNotificationPermission();
 }
 
@@ -169,9 +171,26 @@ function handleWsMessage(data) {
         case 'chat': receiveMessage(data); break;
         case 'group_chat': receiveGroupMessage(data); break;
         case 'typing': showTypingIndicator(data); break;
+        case 'status_change': handleStatusChange(data); break;
         case 'read_receipt': break;
         case 'heartbeat_ack': break;
     }
+}
+
+function handleStatusChange(data) {
+    const userId = data.user_id;
+    const online = data.online;
+
+    // 获取用户名称
+    let userName = '用户' + userId;
+    if (conversations[userId]) {
+        userName = conversations[userId].name;
+        conversations[userId].online = online;
+        renderConversations();
+    }
+
+    // 显示通知
+    showToast(`${userName} ${online ? '上线了' : '下线了'}`, online ? 'success' : 'info');
 }
 
 // ==================== 输入状态提示 ====================
@@ -202,7 +221,7 @@ function receiveMessage(data) {
     const fromId = data.from;
     const content = data.content;
     const time = data.time || new Date().toLocaleTimeString();
-    
+
     if (!conversations[fromId]) {
         conversations[fromId] = {
             id: fromId,
@@ -214,11 +233,8 @@ function receiveMessage(data) {
     } else {
         conversations[fromId].lastMsg = content;
         conversations[fromId].time = time;
-        if (currentTarget !== fromId) {
-            conversations[fromId].unread = (conversations[fromId].unread || 0) + 1;
-        }
     }
-    
+
     if (!messages[fromId]) messages[fromId] = [];
     messages[fromId].push({
         from: fromId,
@@ -227,11 +243,13 @@ function receiveMessage(data) {
         time: time,
         self: false
     });
-    
+
     renderConversations();
     if (currentTarget === fromId) {
         renderMessages(fromId);
     } else {
+        // 增加未读计数
+        addUnreadCount(fromId);
         // 显示浏览器通知
         showToast(`收到来自 ${data.from_name || '用户' + fromId} 的新消息`);
         showBrowserNotification(data.from_name || '用户' + fromId, content);
@@ -470,6 +488,140 @@ async function recallMessage(messageId) {
     } catch (e) { showToast('网络错误', 'error'); }
 }
 
+// ==================== 消息转发 ====================
+function forwardMessage(messageId) {
+    const friendArray = Object.values(conversations);
+    if (friendArray.length === 0) {
+        showToast('暂无会话，无法转发', 'error');
+        return;
+    }
+
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog-overlay';
+    dialog.innerHTML = `
+        <div class="dialog" style="max-width:400px">
+            <h3>转发消息</h3>
+            <div class="forward-list">
+                ${friendArray.map(f => `
+                    <div class="contact-item" onclick="confirmForward(${messageId}, ${f.id}, '${f.name}')">
+                        <div class="avatar" style="background: ${getAvatarColor(f.id)}">${f.name[0]}</div>
+                        <span class="name">${f.name}</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+}
+
+async function confirmForward(messageId, toUserId, toUserName) {
+    document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+
+    try {
+        const r = await fetch(`${API}/api/message/forward`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ msg_id: messageId, to_user_id: toUserId, from_user_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast(`消息已转发给 ${toUserName}`);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+// ==================== 未读消息数 ====================
+function addUnreadCount(userId) {
+    if (!unreadCounts[userId]) unreadCounts[userId] = 0;
+    unreadCounts[userId]++;
+    updateUnreadBadge(userId);
+}
+
+function clearUnreadCount(userId) {
+    unreadCounts[userId] = 0;
+    updateUnreadBadge(userId);
+}
+
+function updateUnreadBadge(userId) {
+    const count = unreadCounts[userId] || 0;
+    const badge = document.querySelector(`[data-user-id="${userId}"] .unread-badge`);
+    if (badge) {
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+}
+
+// ==================== 消息回复 ====================
+function replyMessage(messageId) {
+    // 查找消息获取发送者名称
+    let senderName = '';
+    for (const msgs of Object.values(messages)) {
+        const msg = msgs.find(m => m.id === messageId);
+        if (msg) {
+            senderName = msg.from_name || '用户';
+            break;
+        }
+    }
+
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog-overlay';
+    dialog.innerHTML = `
+        <div class="dialog" style="max-width:400px">
+            <h3>回复 ${senderName}</h3>
+            <div class="form-group">
+                <textarea id="reply-content" rows="3" placeholder="输入回复内容..."></textarea>
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+                <button class="dialog-confirm" onclick="confirmReply(${messageId})">发送</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+    document.getElementById('reply-content').focus();
+}
+
+async function confirmReply(messageId) {
+    const content = document.getElementById('reply-content').value.trim();
+    if (!content) { showToast('请输入回复内容', 'error'); return; }
+
+    document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+
+    if (!currentTarget) { showToast('请选择会话', 'error'); return; }
+
+    try {
+        const r = await fetch(`${API}/api/message/reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                reply_to_msg_id: messageId,
+                from_user_id: currentUser.id,
+                to_user_id: currentTarget,
+                content: content
+            })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('回复已发送');
+            // 刷新消息列表
+            loadMessageHistory(currentTarget);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
 // ==================== 消息置顶 ====================
 function togglePin(messageId) {
     const userId = currentTarget < 0 ? -currentTarget : currentTarget;
@@ -497,17 +649,20 @@ function togglePin(messageId) {
 // ==================== 渲染函数 ====================
 function renderConversations() {
     const list = document.getElementById('conv-list');
-    const convArray = Object.values(conversations).sort((a, b) => 
+    const convArray = Object.values(conversations).sort((a, b) =>
         new Date(b.time) - new Date(a.time)
     );
-    
+
     if (convArray.length === 0) {
         list.innerHTML = '<div class="empty-state small">暂无会话</div>';
         return;
     }
-    
-    list.innerHTML = convArray.map(c => `
-        <div class="conversation-item ${currentTarget === c.id ? 'active' : ''}" 
+
+    list.innerHTML = convArray.map(c => {
+        const unread = unreadCounts[c.id] || 0;
+        return `
+        <div class="conversation-item ${currentTarget === c.id ? 'active' : ''}"
+             data-user-id="${c.id}"
              onclick="startChat(${c.id}, '${c.name}')">
             <div class="avatar" style="background: ${getAvatarColor(c.id)}">${c.name[0]}</div>
             <div class="info">
@@ -516,10 +671,10 @@ function renderConversations() {
             </div>
             <div class="meta">
                 <span class="time">${formatTime(c.time)}</span>
-                ${c.unread > 0 ? `<span class="unread">${c.unread}</span>` : ''}
+                ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function renderMessages(userId) {
@@ -561,8 +716,12 @@ function renderMessages(userId) {
         }
         
         const readStatus = m.self ? (m.read ? '<span class="read-status read">已读</span>' : '<span class="read-status">已发送</span>') : '';
-        const recallBtn = m.self && m.content && !m.content.startsWith('[消息已撤回]') ? 
+        const recallBtn = m.self && m.content && !m.content.startsWith('[消息已撤回]') ?
             `<button class="btn-recall" onclick="recallMessage(${m.id})">撤回</button>` : '';
+        const forwardBtn = m.content && !m.content.startsWith('[消息已撤回]') ?
+            `<button class="btn-recall" onclick="forwardMessage(${m.id})">转发</button>` : '';
+        const replyBtn = !m.self && m.content && !m.content.startsWith('[消息已撤回]') ?
+            `<button class="btn-recall" onclick="replyMessage(${m.id})">回复</button>` : '';
         const pinBtn = `<button class="btn-pin" onclick="togglePin(${m.id})" title="${m.pinned ? '取消置顶' : '置顶'}">📌</button>`;
         
         return `
@@ -571,7 +730,7 @@ function renderMessages(userId) {
             <div class="content">
                 ${!m.self && m.from_name ? `<div class="sender-name">${m.from_name}</div>` : ''}
                 <div class="bubble">${messageContent}</div>
-                <div class="time">${m.time} ${readStatus} ${recallBtn} ${pinBtn}</div>
+                <div class="time">${m.time} ${readStatus} ${recallBtn} ${forwardBtn} ${replyBtn} ${pinBtn}</div>
             </div>
         </div>`;
     }).join('');
@@ -586,10 +745,11 @@ function renderFriends(friends) {
         return;
     }
     list.innerHTML = friends.map(f => `
-        <div class="contact-item" onclick="startChat(${f.id}, '${f.nickname || f.username}')">
+        <div class="contact-item">
             <div class="avatar" style="background: ${getAvatarColor(f.id)}">${(f.nickname || f.username)[0]}</div>
-            <span class="name">${f.nickname || f.username}</span>
+            <span class="name" onclick="startChat(${f.id}, '${f.nickname || f.username}')">${f.nickname || f.username}</span>
             <div class="status ${f.online ? 'online' : ''}"></div>
+            <button class="btn-recall" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除">✕</button>
         </div>
     `).join('');
 }
@@ -601,11 +761,96 @@ function renderGroups() {
         return;
     }
     list.innerHTML = Object.values(groups).map(g => `
-        <div class="contact-item" onclick="startGroupChat(${g.id}, '${g.name}')">
+        <div class="contact-item">
             <div class="avatar" style="background: linear-gradient(135deg, #52c41a, #73d13d)">${g.name[0]}</div>
-            <span class="name">${g.name}</span>
+            <div class="info">
+                <span class="name" onclick="startGroupChat(${g.id}, '${g.name}')">${g.name}</span>
+                <span class="group-id">ID: ${g.id}</span>
+            </div>
+            <button class="btn-recall" onclick="event.stopPropagation();leaveGroup(${g.id}, '${g.name}')" title="退出群组">✕</button>
         </div>
     `).join('');
+}
+
+// ==================== 群组管理 ====================
+async function loadGroups() {
+    try {
+        const r = await fetch(`${API}/api/group/list?user_id=${currentUser.id}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            groups = {};
+            data.data.forEach(g => { groups[g.id] = g; });
+            renderGroups();
+        }
+    } catch (e) {}
+}
+
+async function createGroup() {
+    const name = document.getElementById('group-name').value.trim();
+    if (!name) { showToast('请输入群组名称', 'error'); return; }
+
+    try {
+        const r = await fetch(`${API}/api/group/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, name: name })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            groups[data.data.id] = data.data;
+            renderGroups();
+            document.getElementById('group-name').value = '';
+            showToast('群组创建成功');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function joinGroup() {
+    const groupId = parseInt(document.getElementById('group-id').value);
+    if (!groupId || groupId <= 0) { showToast('请输入有效的群组ID', 'error'); return; }
+
+    try {
+        const r = await fetch(`${API}/api/group/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, group_id: groupId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('已加入群组');
+            loadGroups();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function leaveGroup(groupId, groupName) {
+    if (!confirm(`确定要退出群组 "${groupName}" 吗？`)) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, group_id: -groupId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('已退出群组');
+            loadGroups();
+            if (currentTarget && currentTarget.id === groupId && currentTarget.isGroup) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-input').disabled = true;
+                document.getElementById('btn-send').disabled = true;
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
 }
 
 // ==================== 好友管理 ====================
@@ -613,7 +858,7 @@ async function addFriend() {
     const friendId = parseInt(document.getElementById('add-friend-id').value);
     if (!friendId || friendId <= 0) { showToast('请输入有效的好友ID', 'error'); return; }
     if (friendId === currentUser.id) { showToast('不能添加自己为好友', 'error'); return; }
-    
+
     try {
         const r = await fetch(`${API}/api/friend/add`, {
             method: 'POST',
@@ -623,6 +868,33 @@ async function addFriend() {
         const data = await r.json();
         showToast(data.code === 0 ? '好友申请已发送' : data.message, data.code === 0 ? 'success' : 'error');
         document.getElementById('add-friend-id').value = '';
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function removeFriend(friendId, friendName) {
+    if (!confirm(`确定要删除好友 "${friendName}" 吗？`)) return;
+
+    try {
+        const r = await fetch(`${API}/api/friend/remove`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, friend_id: friendId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('好友已删除');
+            loadFriends();
+            // 如果当前正在与此好友聊天，退出聊天
+            if (currentTarget && currentTarget.id === friendId) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-input').disabled = true;
+                document.getElementById('btn-send').disabled = true;
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+        } else {
+            showToast(data.message, 'error');
+        }
     } catch (e) { showToast('网络错误', 'error'); }
 }
 
@@ -724,10 +996,11 @@ function startChat(userId, userName) {
     document.getElementById('chat-target').innerHTML = `<span>${userName}</span>`;
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
-    
-    if (conversations[userId]) conversations[userId].unread = 0;
+
+    // 清除未读计数
+    clearUnreadCount(userId);
     renderConversations();
-    
+
     // 从服务器加载历史消息
     loadMessageHistory(userId);
 }

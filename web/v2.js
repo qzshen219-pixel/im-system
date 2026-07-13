@@ -586,10 +586,11 @@ function renderFriends(friends) {
         return;
     }
     list.innerHTML = friends.map(f => `
-        <div class="contact-item" onclick="startChat(${f.id}, '${f.nickname || f.username}')">
+        <div class="contact-item">
             <div class="avatar" style="background: ${getAvatarColor(f.id)}">${(f.nickname || f.username)[0]}</div>
-            <span class="name">${f.nickname || f.username}</span>
+            <span class="name" onclick="startChat(${f.id}, '${f.nickname || f.username}')">${f.nickname || f.username}</span>
             <div class="status ${f.online ? 'online' : ''}"></div>
+            <button class="btn-recall" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除">✕</button>
         </div>
     `).join('');
 }
@@ -613,7 +614,7 @@ async function addFriend() {
     const friendId = parseInt(document.getElementById('add-friend-id').value);
     if (!friendId || friendId <= 0) { showToast('请输入有效的好友ID', 'error'); return; }
     if (friendId === currentUser.id) { showToast('不能添加自己为好友', 'error'); return; }
-    
+
     try {
         const r = await fetch(`${API}/api/friend/add`, {
             method: 'POST',
@@ -623,6 +624,33 @@ async function addFriend() {
         const data = await r.json();
         showToast(data.code === 0 ? '好友申请已发送' : data.message, data.code === 0 ? 'success' : 'error');
         document.getElementById('add-friend-id').value = '';
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function removeFriend(friendId, friendName) {
+    if (!confirm(`确定要删除好友 "${friendName}" 吗？`)) return;
+
+    try {
+        const r = await fetch(`${API}/api/friend/remove`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, friend_id: friendId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('好友已删除');
+            loadFriends();
+            // 如果当前正在与此好友聊天，退出聊天
+            if (currentTarget && currentTarget.id === friendId) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-input').disabled = true;
+                document.getElementById('btn-send').disabled = true;
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+        } else {
+            showToast(data.message, 'error');
+        }
     } catch (e) { showToast('网络错误', 'error'); }
 }
 

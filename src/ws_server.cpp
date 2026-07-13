@@ -70,15 +70,18 @@ void WsServer::onOpen(connection_hdl hdl) {
 
 void WsServer::onClose(connection_hdl hdl) {
     std::cout << "[WS] 连接关闭" << std::endl;
-    
+
     int userId = getUserIdFromHdl(hdl);
     if (userId > 0) {
+        // 广播离线状态给好友
+        broadcastStatusToFriends(userId, false);
+
         // 更新用户在线状态
         m_userManager->setOnline(userId, false);
-        
+
         // 移除连接
         removeConnection(hdl);
-        
+
         std::cout << "[WS] 用户 " << userId << " 离线" << std::endl;
     }
 }
@@ -99,7 +102,7 @@ void WsServer::onMessage(connection_hdl hdl, websocketpp::config::asio::message_
             // 登录消息
             int userId = root["user_id"].asInt();
             std::string token = root["token"].asString();
-            
+
             // 验证 token
             if (m_userManager->verifyToken(userId, token)) {
                 // 关联用户ID和连接
@@ -107,16 +110,19 @@ void WsServer::onMessage(connection_hdl hdl, websocketpp::config::asio::message_
                     std::lock_guard<std::mutex> lock(m_connMutex);
                     m_connections[userId] = hdl;
                 }
-                
+
                 // 更新在线状态
                 m_userManager->setOnline(userId, true);
-                
+
                 // 发送登录成功响应
                 Json::Value resp;
                 resp["type"] = "login_ok";
                 resp["user_id"] = userId;
                 m_server.send(hdl, Json::FastWriter().write(resp), websocketpp::frame::opcode::text);
-                
+
+                // 广播在线状态给好友
+                broadcastStatusToFriends(userId, true);
+
                 std::cout << "[WS] 用户 " << userId << " 登录成功" << std::endl;
             } else {
                 // 登录失败
@@ -138,9 +144,9 @@ void WsServer::onMessage(connection_hdl hdl, websocketpp::config::asio::message_
             std::string content = root["content"].asString();
             int msgType = root.get("msg_type", 1).asInt();
             int fileId = root.get("file_id", 0).asInt();
-            
+
             // 处理消息（保存到数据库）
-            m_msgHandler->handleChatMessage(userId, toUserId, content, msgType);
+            m_msgHandler->handleChatMessage(userId, toUserId, content, msgType, fileId);
             
             // 构建消息 JSON 并发送给接收者
             Json::Value msgJson;
@@ -340,4 +346,22 @@ void WsServer::broadcast(const std::string& message) {
 bool WsServer::isUserOnline(int userId) {
     std::lock_guard<std::mutex> lock(m_connMutex);
     return m_connections.find(userId) != m_connections.end();
+}
+
+void WsServer::broadcastStatusToFriends(int userId, bool online) {
+    // 获取好友列表
+    auto friends = m_userManager->getFriends(userId);
+
+    // 构建状态消息
+    Json::Value statusMsg;
+    statusMsg["type"] = "status_change";
+    statusMsg["user_id"] = userId;
+    statusMsg["online"] = online;
+
+    std::string msgStr = Json::FastWriter().write(statusMsg);
+
+    // 发送给所有在线好友
+    for (int friendId : friends) {
+        sendToUser(friendId, msgStr);
+    }
 }

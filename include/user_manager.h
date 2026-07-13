@@ -15,6 +15,7 @@
 #include <string>
 #include <unordered_map>
 #include <mutex>
+#include <vector>
 
 class RedisClient;
 class MysqlClient;
@@ -52,6 +53,9 @@ public:
 
     // 获取用户信息
     bool getUserInfo(int userId, std::string& username, std::string& nickname);
+
+    // 获取好友列表
+    std::vector<int> getFriends(int userId);
 
 private:
     std::string generateToken();
