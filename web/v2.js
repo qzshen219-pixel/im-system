@@ -586,11 +586,11 @@ function renderFriends(friends) {
         return;
     }
     list.innerHTML = friends.map(f => `
-        <div class="contact-item" onclick="startChat(${f.id}, '${f.nickname || f.username}')">
+        <div class="contact-item">
             <div class="avatar" style="background: ${getAvatarColor(f.id)}">${(f.nickname || f.username)[0]}</div>
-            <span class="name">${f.nickname || f.username}</span>
+            <span class="name" onclick="startChat(${f.id}, '${f.nickname || f.username}')">${f.nickname || f.username}</span>
             <div class="status ${f.online ? 'online' : ''}"></div>
-            <button class="btn-remove-friend" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除好友"></button>
+            <button class="btn-remove-friend" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除">✕</button>
         </div>
     `).join('');
 }
