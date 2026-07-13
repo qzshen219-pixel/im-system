@@ -249,8 +249,11 @@ std::string HttpServer::handleFriends(int userId)
     result["code"] = 0;
     result["data"] = Json::arrayValue;
 
-    // 查询所有用户（排除自己）
-    std::string sql = "SELECT id, username, nickname FROM users WHERE id != " + std::to_string(userId);
+    // 查询好友关系表中 status='accepted' 的好友
+    std::string sql = "SELECT DISTINCT u.id, u.username, u.nickname FROM friends f "
+        "JOIN users u ON (f.friend_id = u.id OR f.user_id = u.id) "
+        "WHERE f.status = 'accepted' AND (f.user_id = " + std::to_string(userId) + " OR f.friend_id = " + std::to_string(userId) + ") "
+        "AND u.id != " + std::to_string(userId);
     m_mysql->query(sql);
     auto rows = m_mysql->getResult();
 
