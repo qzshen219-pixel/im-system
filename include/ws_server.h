@@ -65,6 +65,9 @@ private:
     // 移除连接
     void removeConnection(connection_hdl hdl);
 
+    // 广播状态变化给好友
+    void broadcastStatusToFriends(int userId, bool online);
+
     ws_server m_server;
     int m_port;
     bool m_running;

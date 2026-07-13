@@ -170,8 +170,20 @@ function handleWsMessage(data) {
         case 'chat': receiveMessage(data); break;
         case 'group_chat': receiveGroupMessage(data); break;
         case 'typing': showTypingIndicator(data); break;
+        case 'status_change': handleStatusChange(data); break;
         case 'read_receipt': break;
         case 'heartbeat_ack': break;
+    }
+}
+
+function handleStatusChange(data) {
+    const userId = data.user_id;
+    const online = data.online;
+
+    // 更新好友列表中的在线状态
+    if (conversations[userId]) {
+        conversations[userId].online = online;
+        renderConversations();
     }
 }
 
