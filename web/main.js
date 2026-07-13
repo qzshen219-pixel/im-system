@@ -107,6 +107,7 @@ function enterChat() {
     connectWebSocket();
     loadFriends();
     loadPendingFriends();
+    loadFolders();
     requestNotificationPermission();
 }
 
@@ -774,6 +775,79 @@ function createGroup() {
     showToast('群组 "' + name + '" 创建成功');
 }
 
+// ==================== 文件夹管理 ====================
+let folders = {};
+
+async function loadFolders() {
+    try {
+        const r = await fetch(`${API}/api/folder/list?user_id=${currentUser.id}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            folders = {};
+            data.data.forEach(f => { folders[f.id] = f; });
+            renderFolders();
+        }
+    } catch (e) {}
+}
+
+async function createFolder() {
+    const name = document.getElementById('new-folder-name').value.trim();
+    if (!name) { showToast('请输入文件夹名称', 'error'); return; }
+    
+    try {
+        const r = await fetch(`${API}/api/folder/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, name: name })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            folders[data.data.id] = data.data;
+            renderFolders();
+            document.getElementById('new-folder-name').value = '';
+            showToast('文件夹创建成功');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function deleteFolder(folderId) {
+    if (!confirm('确定删除此文件夹？')) return;
+    
+    try {
+        const r = await fetch(`${API}/api/folder/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder_id: folderId, user_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            delete folders[folderId];
+            renderFolders();
+            showToast('文件夹已删除');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+function renderFolders() {
+    const list = document.getElementById('folder-items');
+    if (!list) return;
+    
+    const folderArray = Object.values(folders);
+    if (folderArray.length === 0) {
+        list.innerHTML = '<div class="empty-state small">暂无文件夹</div>';
+        return;
+    }
+    list.innerHTML = folderArray.map(f => `
+        <div class="contact-item">
+            <div class="avatar" style="background: linear-gradient(135deg, #faad14, #fa8c16)">📁</div>
+            <span class="name">${f.name}</span>
+            <button class="btn-recall" onclick="deleteFolder(${f.id})" title="删除">✕</button>
+        </div>
+    `).join('');
+}
+
 function filterConversations() {
     const query = document.getElementById('searchInput').value.toLowerCase();
     document.querySelectorAll('.conversation-item').forEach(item => {
@@ -909,12 +983,25 @@ async function loadFriends() {
     } catch (e) {}
 }
 
-// 键盘事件
+// ==================== 快捷键 ====================
 document.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey && document.activeElement?.id === 'msg-input') {
-        e.preventDefault();
-        sendMessage();
+    if ((e.key === 'Enter' && !e.shiftKey && document.activeElement?.id === 'msg-input') ||
+        (e.key === 'Enter' && e.ctrlKey && document.activeElement?.id === 'msg-input')) {
+        e.preventDefault(); sendMessage();
     }
+    if (e.key === 'Escape') {
+        const d = document.querySelector('.dialog-overlay'); if (d) { d.remove(); return; }
+        const em = document.getElementById('emoji-picker'); if (em && em.style.display !== 'none') { em.style.display = 'none'; return; }
+        if (currentTarget) {
+            currentTarget = null;
+            document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+            document.getElementById('msg-input').disabled = true;
+            document.getElementById('btn-send').disabled = true;
+            document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+        }
+    }
+    if (e.ctrlKey && e.key === 'k') { e.preventDefault(); document.getElementById('searchInput')?.focus(); }
+    if (e.ctrlKey && e.key === '/') { e.preventDefault(); document.getElementById('msg-input')?.focus(); }
 });
 
 // 输入事件 - 发送正在输入状态
