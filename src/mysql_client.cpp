@@ -34,8 +34,18 @@ bool MysqlClient::connect()
     // 设置字符集
     mysql_options(m_conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
 
-    if (!mysql_real_connect(m_conn, m_host.c_str(), m_user.c_str(), 
-                            m_password.c_str(), m_database.c_str(), 
+    // 启用自动重连
+    bool reconnect = true;
+    mysql_options(m_conn, MYSQL_OPT_RECONNECT, &reconnect);
+
+    // 设置超时时间
+    unsigned int timeout = 10;
+    mysql_options(m_conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+    mysql_options(m_conn, MYSQL_OPT_READ_TIMEOUT, &timeout);
+    mysql_options(m_conn, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
+
+    if (!mysql_real_connect(m_conn, m_host.c_str(), m_user.c_str(),
+                            m_password.c_str(), m_database.c_str(),
                             0, nullptr, 0)) {
         std::cerr << "[MySQL] 连接失败: " << mysql_error(m_conn) << std::endl;
         mysql_close(m_conn);
@@ -64,7 +74,15 @@ void MysqlClient::disconnect()
 
 bool MysqlClient::query(const std::string& sql)
 {
-    if (!m_conn) return false;
+    // 检查连接是否有效，如果无效则重连
+    if (!m_conn || mysql_ping(m_conn) != 0) {
+        std::cerr << "[MySQL] 连接断开，尝试重连..." << std::endl;
+        disconnect();
+        if (!connect()) {
+            std::cerr << "[MySQL] 重连失败" << std::endl;
+            return false;
+        }
+    }
 
     if (m_result) {
         mysql_free_result(m_result);
@@ -73,7 +91,21 @@ bool MysqlClient::query(const std::string& sql)
 
     if (mysql_query(m_conn, sql.c_str()) != 0) {
         std::cerr << "[MySQL] 查询失败: " << mysql_error(m_conn) << std::endl;
-        return false;
+        // 如果查询失败，尝试重连一次
+        if (mysql_errno(m_conn) == 2006 || mysql_errno(m_conn) == 2013) {
+            std::cerr << "[MySQL] 连接丢失，尝试重连..." << std::endl;
+            disconnect();
+            if (connect()) {
+                if (mysql_query(m_conn, sql.c_str()) != 0) {
+                    std::cerr << "[MySQL] 重连后查询仍失败: " << mysql_error(m_conn) << std::endl;
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
     }
 
     m_result = mysql_store_result(m_conn);
