@@ -139,6 +139,9 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/message/forward" && methodStr == "POST") {
         response = server->handleMessageForward(*body);
     }
+    else if (urlStr == "/api/message/reply" && methodStr == "POST") {
+        response = server->handleMessageReply(*body);
+    }
     else if (urlStr == "/api/user/profile" && methodStr == "GET") {
         const char *userIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "user_id");
         int userId = userIdStr ? std::stoi(userIdStr) : 0;
@@ -550,6 +553,52 @@ std::string HttpServer::handleMessageForward(const std::string& body)
     // 插入新消息
     std::string insertSql = "INSERT INTO messages (from_user_id, to_user_id, content, msg_type) VALUES ("
         + std::to_string(fromUserId) + ", " + std::to_string(toUserId) + ", '" + content + "', " + std::to_string(msgType) + ")";
+    m_mysql->query(insertSql);
+    int newMsgId = m_mysql->insertId();
+
+    Json::Value result;
+    result["code"] = 0;
+    result["data"]["msg_id"] = newMsgId;
+    return Json::FastWriter().write(result);
+}
+
+std::string HttpServer::handleMessageReply(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int replyToMsgId = root["reply_to_msg_id"].asInt();
+    int fromUserId = root["from_user_id"].asInt();
+    int toUserId = root["to_user_id"].asInt();
+    std::string content = root["content"].asString();
+
+    if (replyToMsgId <= 0 || fromUserId <= 0 || toUserId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 获取原消息内容
+    std::string sql = "SELECT content FROM messages WHERE id=" + std::to_string(replyToMsgId);
+    m_mysql->query(sql);
+    auto rows = m_mysql->getResult();
+    if (rows.empty()) {
+        return "{\"code\":1,\"message\":\"原消息不存在\"}";
+    }
+
+    std::string originalContent = rows[0][0];
+    // 截取前50个字符
+    if (originalContent.length() > 50) {
+        originalContent = originalContent.substr(0, 50) + "...";
+    }
+
+    // 构建回复消息内容
+    std::string replyContent = "[回复: " + originalContent + "] " + content;
+
+    // 插入新消息
+    std::string insertSql = "INSERT INTO messages (from_user_id, to_user_id, content, msg_type) VALUES ("
+        + std::to_string(fromUserId) + ", " + std::to_string(toUserId) + ", '" + replyContent + "', 1)";
     m_mysql->query(insertSql);
     int newMsgId = m_mysql->insertId();
 

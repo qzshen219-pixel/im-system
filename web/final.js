@@ -519,6 +519,61 @@ async function confirmForward(messageId, toUserId, toUserName) {
     } catch (e) { showToast('网络错误', 'error'); }
 }
 
+// ==================== 消息回复 ====================
+function replyMessage(messageId, senderName) {
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog-overlay';
+    dialog.innerHTML = `
+        <div class="dialog" style="max-width:400px">
+            <h3>回复 ${senderName}</h3>
+            <div class="form-group">
+                <textarea id="reply-content" rows="3" placeholder="输入回复内容..."></textarea>
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+                <button class="dialog-confirm" onclick="confirmReply(${messageId})">发送</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+    document.getElementById('reply-content').focus();
+}
+
+async function confirmReply(messageId) {
+    const content = document.getElementById('reply-content').value.trim();
+    if (!content) { showToast('请输入回复内容', 'error'); return; }
+
+    document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+
+    const targetId = currentTarget.isGroup ? currentTarget.id : currentTarget.id;
+
+    try {
+        const r = await fetch(`${API}/api/message/reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                reply_to_msg_id: messageId,
+                from_user_id: currentUser.id,
+                to_user_id: targetId,
+                content: content
+            })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('回复已发送');
+            // 刷新消息列表
+            if (currentTarget.isGroup) {
+                loadGroupMessages(currentTarget.id);
+            } else {
+                loadMessages(currentTarget.id);
+            }
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
 // ==================== 消息置顶 ====================
 function togglePin(messageId) {
     const userId = currentTarget < 0 ? -currentTarget : currentTarget;
@@ -614,6 +669,8 @@ function renderMessages(userId) {
             `<button class="btn-recall" onclick="recallMessage(${m.id})">撤回</button>` : '';
         const forwardBtn = m.content && !m.content.startsWith('[消息已撤回]') ?
             `<button class="btn-recall" onclick="forwardMessage(${m.id})">转发</button>` : '';
+        const replyBtn = !m.self && m.content && !m.content.startsWith('[消息已撤回]') ?
+            `<button class="btn-recall" onclick="replyMessage(${m.id}, '${m.from_name || ''}')">回复</button>` : '';
         const pinBtn = `<button class="btn-pin" onclick="togglePin(${m.id})" title="${m.pinned ? '取消置顶' : '置顶'}">📌</button>`;
         
         return `
@@ -622,7 +679,7 @@ function renderMessages(userId) {
             <div class="content">
                 ${!m.self && m.from_name ? `<div class="sender-name">${m.from_name}</div>` : ''}
                 <div class="bubble">${messageContent}</div>
-                <div class="time">${m.time} ${readStatus} ${recallBtn} ${forwardBtn} ${pinBtn}</div>
+                <div class="time">${m.time} ${readStatus} ${recallBtn} ${forwardBtn} ${replyBtn} ${pinBtn}</div>
             </div>
         </div>`;
     }).join('');
