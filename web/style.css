@@ -652,6 +652,29 @@ body {
     background: var(--red-bg);
 }
 
+.btn-remove-friend {
+    padding: 2px 8px;
+    background: transparent;
+    color: var(--text3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    cursor: pointer;
+    transition: var(--transition);
+    margin-left: auto;
+    opacity: 0;
+}
+
+.contact-item:hover .btn-remove-friend {
+    opacity: 1;
+}
+
+.btn-remove-friend:hover {
+    color: var(--red);
+    border-color: var(--red);
+    background: var(--red-bg);
+}
+
 .btn-pin {
     padding: 2px 6px;
     background: transparent;
