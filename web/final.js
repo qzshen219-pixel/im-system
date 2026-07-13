@@ -181,11 +181,16 @@ function handleStatusChange(data) {
     const userId = data.user_id;
     const online = data.online;
 
-    // 更新好友列表中的在线状态
+    // 获取用户名称
+    let userName = '用户' + userId;
     if (conversations[userId]) {
+        userName = conversations[userId].name;
         conversations[userId].online = online;
         renderConversations();
     }
+
+    // 显示通知
+    showToast(`${userName} ${online ? '上线了' : '下线了'}`, online ? 'success' : 'info');
 }
 
 // ==================== 输入状态提示 ====================
@@ -485,9 +490,9 @@ async function recallMessage(messageId) {
 
 // ==================== 消息转发 ====================
 function forwardMessage(messageId) {
-    const friendArray = Object.values(conversations).filter(c => c.type === 'user');
+    const friendArray = Object.values(conversations);
     if (friendArray.length === 0) {
-        showToast('暂无好友，无法转发', 'error');
+        showToast('暂无会话，无法转发', 'error');
         return;
     }
 
@@ -557,7 +562,17 @@ function updateUnreadBadge(userId) {
 }
 
 // ==================== 消息回复 ====================
-function replyMessage(messageId, senderName) {
+function replyMessage(messageId) {
+    // 查找消息获取发送者名称
+    let senderName = '';
+    for (const msgs of Object.values(messages)) {
+        const msg = msgs.find(m => m.id === messageId);
+        if (msg) {
+            senderName = msg.from_name || '用户';
+            break;
+        }
+    }
+
     const dialog = document.createElement('div');
     dialog.className = 'dialog-overlay';
     dialog.innerHTML = `
@@ -583,7 +598,7 @@ async function confirmReply(messageId) {
 
     document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
 
-    const targetId = currentTarget.isGroup ? currentTarget.id : currentTarget.id;
+    if (!currentTarget) { showToast('请选择会话', 'error'); return; }
 
     try {
         const r = await fetch(`${API}/api/message/reply`, {
@@ -592,7 +607,7 @@ async function confirmReply(messageId) {
             body: JSON.stringify({
                 reply_to_msg_id: messageId,
                 from_user_id: currentUser.id,
-                to_user_id: targetId,
+                to_user_id: currentTarget,
                 content: content
             })
         });
@@ -600,11 +615,7 @@ async function confirmReply(messageId) {
         if (data.code === 0) {
             showToast('回复已发送');
             // 刷新消息列表
-            if (currentTarget.isGroup) {
-                loadGroupMessages(currentTarget.id);
-            } else {
-                loadMessages(currentTarget.id);
-            }
+            loadMessageHistory(currentTarget);
         } else {
             showToast(data.message, 'error');
         }
@@ -710,7 +721,7 @@ function renderMessages(userId) {
         const forwardBtn = m.content && !m.content.startsWith('[消息已撤回]') ?
             `<button class="btn-recall" onclick="forwardMessage(${m.id})">转发</button>` : '';
         const replyBtn = !m.self && m.content && !m.content.startsWith('[消息已撤回]') ?
-            `<button class="btn-recall" onclick="replyMessage(${m.id}, '${m.from_name || ''}')">回复</button>` : '';
+            `<button class="btn-recall" onclick="replyMessage(${m.id})">回复</button>` : '';
         const pinBtn = `<button class="btn-pin" onclick="togglePin(${m.id})" title="${m.pinned ? '取消置顶' : '置顶'}">📌</button>`;
         
         return `
