@@ -144,6 +144,25 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/user/update" && methodStr == "POST") {
         response = server->handleUserUpdate(*body);
     }
+    else if (urlStr == "/api/folder/list" && methodStr == "GET") {
+        const char *userIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "user_id");
+        int userId = userIdStr ? std::stoi(userIdStr) : 0;
+        response = server->handleFolderList(userId);
+    }
+    else if (urlStr == "/api/folder/create" && methodStr == "POST") {
+        response = server->handleFolderCreate(*body);
+    }
+    else if (urlStr == "/api/folder/delete" && methodStr == "POST") {
+        response = server->handleFolderDelete(*body);
+    }
+    else if (urlStr == "/api/file/move" && methodStr == "POST") {
+        response = server->handleFileMove(*body);
+    }
+    else if (urlStr == "/api/file/by_folder" && methodStr == "GET") {
+        const char *folderIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "folder_id");
+        int folderId = folderIdStr ? std::stoi(folderIdStr) : 0;
+        response = server->handleFileByFolder(folderId);
+    }
     else if (urlStr == "/api/health" && methodStr == "GET") {
         response = "{\"status\":\"ok\",\"timestamp\":\"" + std::to_string(std::time(nullptr)) + "\"}";
     }
@@ -539,4 +558,118 @@ std::string HttpServer::handleUserUpdate(const std::string& body)
     m_mysql->query(sql);
     
     return "{\"code\":0,\"message\":\"Profile updated\"}";
+}
+
+std::string HttpServer::handleFolderList(int userId)
+{
+    Json::Value result;
+    result["code"] = 0;
+    result["data"] = Json::arrayValue;
+    
+    std::string sql = "SELECT id, name, created_at FROM folders WHERE user_id=" + std::to_string(userId) + " ORDER BY created_at DESC";
+    m_mysql->query(sql);
+    auto rows = m_mysql->getResult();
+    
+    for (auto& row : rows) {
+        Json::Value folder;
+        folder["id"] = std::stoi(row[0]);
+        folder["name"] = row[1];
+        folder["created_at"] = row[2];
+        result["data"].append(folder);
+    }
+    
+    return Json::FastWriter().write(result);
+}
+
+std::string HttpServer::handleFolderCreate(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+    
+    int userId = root["user_id"].asInt();
+    std::string name = root["name"].asString();
+    
+    if (userId <= 0 || name.empty()) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+    
+    std::string sql = "INSERT INTO folders (user_id, name) VALUES (" + std::to_string(userId) + ",'" + name + "')";
+    if (m_mysql->query(sql)) {
+        int folderId = m_mysql->insertId();
+        return "{\"code\":0,\"data\":{\"id\":" + std::to_string(folderId) + ",\"name\":\"" + name + "\"}}";
+    }
+    return "{\"code\":1,\"message\":\"Failed to create folder\"}";
+}
+
+std::string HttpServer::handleFolderDelete(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+    
+    int folderId = root["folder_id"].asInt();
+    int userId = root["user_id"].asInt();
+    
+    if (folderId <= 0 || userId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+    
+    std::string sql = "DELETE FROM folders WHERE id=" + std::to_string(folderId) + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(sql);
+    
+    return "{\"code\":0,\"message\":\"Folder deleted\"}";
+}
+
+std::string HttpServer::handleFileMove(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+    
+    int fileId = root["file_id"].asInt();
+    int folderId = root["folder_id"].asInt();
+    
+    if (fileId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid file_id\"}";
+    }
+    
+    std::string sql = "UPDATE files SET folder_id=" + std::to_string(folderId) + " WHERE id=" + std::to_string(fileId);
+    m_mysql->query(sql);
+    
+    return "{\"code\":0,\"message\":\"File moved\"}";
+}
+
+std::string HttpServer::handleFileByFolder(int folderId)
+{
+    Json::Value result;
+    result["code"] = 0;
+    result["data"] = Json::arrayValue;
+    
+    std::string sql;
+    if (folderId == 0) {
+        sql = "SELECT id, filename, LENGTH(file_data), created_at FROM files WHERE folder_id=0 ORDER BY created_at DESC";
+    } else {
+        sql = "SELECT id, filename, LENGTH(file_data), created_at FROM files WHERE folder_id=" + std::to_string(folderId) + " ORDER BY created_at DESC";
+    }
+    
+    m_mysql->query(sql);
+    auto rows = m_mysql->getResult();
+    
+    for (auto& row : rows) {
+        Json::Value file;
+        file["id"] = std::stoi(row[0]);
+        file["filename"] = row[1];
+        file["size"] = std::stoi(row[2]);
+        file["time"] = row[3];
+        result["data"].append(file);
+    }
+    
+    return Json::FastWriter().write(result);
 }
