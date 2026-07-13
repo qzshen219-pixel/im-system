@@ -653,22 +653,29 @@ body {
 }
 
 .btn-remove-friend {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     background: transparent;
-    color: var(--text3);
-    border: none;
+    color: #999;
+    border: none !important;
     border-radius: 50%;
-    font-size: 14px;
+    font-size: 16px;
     cursor: pointer;
-    transition: var(--transition);
+    transition: all 0.2s ease;
     margin-left: auto;
     opacity: 0;
     flex-shrink: 0;
+    outline: none;
+}
+
+.btn-remove-friend::before {
+    content: "×";
+    font-size: 18px;
+    line-height: 1;
 }
 
 .contact-item:hover .btn-remove-friend {
@@ -676,8 +683,10 @@ body {
 }
 
 .btn-remove-friend:hover {
-    color: #fff;
-    background: var(--red);
+    color: #fff !important;
+    background: #ff4d4f !important;
+    border: none !important;
+    transform: scale(1.1);
 }
 
 .btn-pin {

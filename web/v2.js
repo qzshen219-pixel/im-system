@@ -590,7 +590,7 @@ function renderFriends(friends) {
             <div class="avatar" style="background: ${getAvatarColor(f.id)}">${(f.nickname || f.username)[0]}</div>
             <span class="name">${f.nickname || f.username}</span>
             <div class="status ${f.online ? 'online' : ''}"></div>
-            <button class="btn-remove-friend" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除好友">✕</button>
+            <button class="btn-remove-friend" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除好友"></button>
         </div>
     `).join('');
 }
