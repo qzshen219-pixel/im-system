@@ -927,6 +927,12 @@ body {
     background: var(--green);
 }
 
+.group-id {
+    font-size: 11px;
+    color: var(--text3);
+    margin-left: 8px;
+}
+
 /* ==================== 对话框 ==================== */
 .dialog-overlay {
     position: fixed;

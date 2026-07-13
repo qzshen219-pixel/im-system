@@ -763,7 +763,10 @@ function renderGroups() {
     list.innerHTML = Object.values(groups).map(g => `
         <div class="contact-item">
             <div class="avatar" style="background: linear-gradient(135deg, #52c41a, #73d13d)">${g.name[0]}</div>
-            <span class="name" onclick="startGroupChat(${g.id}, '${g.name}')">${g.name}</span>
+            <div class="info">
+                <span class="name" onclick="startGroupChat(${g.id}, '${g.name}')">${g.name}</span>
+                <span class="group-id">ID: ${g.id}</span>
+            </div>
             <button class="btn-recall" onclick="event.stopPropagation();leaveGroup(${g.id}, '${g.name}')" title="退出群组">✕</button>
         </div>
     `).join('');
