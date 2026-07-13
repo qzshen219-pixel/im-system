@@ -6,6 +6,7 @@ let conversations = {};
 let messages = {};
 let groups = {};
 let searchTimer = null;
+let unreadCounts = {};
 
 // ==================== 页面切换 ====================
 function showPage(id) {
@@ -215,7 +216,7 @@ function receiveMessage(data) {
     const fromId = data.from;
     const content = data.content;
     const time = data.time || new Date().toLocaleTimeString();
-    
+
     if (!conversations[fromId]) {
         conversations[fromId] = {
             id: fromId,
@@ -227,11 +228,8 @@ function receiveMessage(data) {
     } else {
         conversations[fromId].lastMsg = content;
         conversations[fromId].time = time;
-        if (currentTarget !== fromId) {
-            conversations[fromId].unread = (conversations[fromId].unread || 0) + 1;
-        }
     }
-    
+
     if (!messages[fromId]) messages[fromId] = [];
     messages[fromId].push({
         from: fromId,
@@ -240,11 +238,13 @@ function receiveMessage(data) {
         time: time,
         self: false
     });
-    
+
     renderConversations();
     if (currentTarget === fromId) {
         renderMessages(fromId);
     } else {
+        // 增加未读计数
+        addUnreadCount(fromId);
         // 显示浏览器通知
         showToast(`收到来自 ${data.from_name || '用户' + fromId} 的新消息`);
         showBrowserNotification(data.from_name || '用户' + fromId, content);
@@ -531,6 +531,31 @@ async function confirmForward(messageId, toUserId, toUserName) {
     } catch (e) { showToast('网络错误', 'error'); }
 }
 
+// ==================== 未读消息数 ====================
+function addUnreadCount(userId) {
+    if (!unreadCounts[userId]) unreadCounts[userId] = 0;
+    unreadCounts[userId]++;
+    updateUnreadBadge(userId);
+}
+
+function clearUnreadCount(userId) {
+    unreadCounts[userId] = 0;
+    updateUnreadBadge(userId);
+}
+
+function updateUnreadBadge(userId) {
+    const count = unreadCounts[userId] || 0;
+    const badge = document.querySelector(`[data-user-id="${userId}"] .unread-badge`);
+    if (badge) {
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+}
+
 // ==================== 消息回复 ====================
 function replyMessage(messageId, senderName) {
     const dialog = document.createElement('div');
@@ -613,17 +638,20 @@ function togglePin(messageId) {
 // ==================== 渲染函数 ====================
 function renderConversations() {
     const list = document.getElementById('conv-list');
-    const convArray = Object.values(conversations).sort((a, b) => 
+    const convArray = Object.values(conversations).sort((a, b) =>
         new Date(b.time) - new Date(a.time)
     );
-    
+
     if (convArray.length === 0) {
         list.innerHTML = '<div class="empty-state small">暂无会话</div>';
         return;
     }
-    
-    list.innerHTML = convArray.map(c => `
-        <div class="conversation-item ${currentTarget === c.id ? 'active' : ''}" 
+
+    list.innerHTML = convArray.map(c => {
+        const unread = unreadCounts[c.id] || 0;
+        return `
+        <div class="conversation-item ${currentTarget === c.id ? 'active' : ''}"
+             data-user-id="${c.id}"
              onclick="startChat(${c.id}, '${c.name}')">
             <div class="avatar" style="background: ${getAvatarColor(c.id)}">${c.name[0]}</div>
             <div class="info">
@@ -632,10 +660,10 @@ function renderConversations() {
             </div>
             <div class="meta">
                 <span class="time">${formatTime(c.time)}</span>
-                ${c.unread > 0 ? `<span class="unread">${c.unread}</span>` : ''}
+                ${unread > 0 ? `<span class="unread-badge">${unread > 99 ? '99+' : unread}</span>` : ''}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function renderMessages(userId) {
@@ -954,10 +982,11 @@ function startChat(userId, userName) {
     document.getElementById('chat-target').innerHTML = `<span>${userName}</span>`;
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
-    
-    if (conversations[userId]) conversations[userId].unread = 0;
+
+    // 清除未读计数
+    clearUnreadCount(userId);
     renderConversations();
-    
+
     // 从服务器加载历史消息
     loadMessageHistory(userId);
 }
