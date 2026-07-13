@@ -122,7 +122,18 @@ body {
 [data-theme="dark"] .input-group input {
     color: #ffffff !important;
     background: transparent !important;
-    -webkit-text-fill-color: #ffffff;
+    -webkit-text-fill-color: #ffffff !important;
+    -webkit-box-shadow: 0 0 0 1000px rgba(30, 30, 50, 0.9) inset !important;
+}
+
+[data-theme="dark"] .input-group input:-webkit-autofill,
+[data-theme="dark"] .input-group input:-webkit-autofill:hover,
+[data-theme="dark"] .input-group input:-webkit-autofill:focus,
+[data-theme="dark"] .input-group input:-webkit-autofill:active {
+    -webkit-text-fill-color: #ffffff !important;
+    -webkit-box-shadow: 0 0 0 1000px rgba(30, 30, 50, 0.9) inset !important;
+    box-shadow: 0 0 0 1000px rgba(30, 30, 50, 0.9) inset !important;
+    transition: background-color 5000s ease-in-out 0s;
 }
 
 [data-theme="dark"] .input-group input::placeholder {
