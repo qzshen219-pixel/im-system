@@ -108,6 +108,7 @@ function enterChat() {
     loadFriends();
     loadPendingFriends();
     loadFolders();
+    loadGroups();
     requestNotificationPermission();
 }
 
@@ -602,11 +603,93 @@ function renderGroups() {
         return;
     }
     list.innerHTML = Object.values(groups).map(g => `
-        <div class="contact-item" onclick="startGroupChat(${g.id}, '${g.name}')">
+        <div class="contact-item">
             <div class="avatar" style="background: linear-gradient(135deg, #52c41a, #73d13d)">${g.name[0]}</div>
-            <span class="name">${g.name}</span>
+            <span class="name" onclick="startGroupChat(${g.id}, '${g.name}')">${g.name}</span>
+            <button class="btn-recall" onclick="event.stopPropagation();leaveGroup(${g.id}, '${g.name}')" title="退出群组">✕</button>
         </div>
     `).join('');
+}
+
+// ==================== 群组管理 ====================
+async function loadGroups() {
+    try {
+        const r = await fetch(`${API}/api/group/list?user_id=${currentUser.id}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            groups = {};
+            data.data.forEach(g => { groups[g.id] = g; });
+            renderGroups();
+        }
+    } catch (e) {}
+}
+
+async function createGroup() {
+    const name = document.getElementById('group-name').value.trim();
+    if (!name) { showToast('请输入群组名称', 'error'); return; }
+
+    try {
+        const r = await fetch(`${API}/api/group/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, name: name })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            groups[data.data.id] = data.data;
+            renderGroups();
+            document.getElementById('group-name').value = '';
+            showToast('群组创建成功');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function joinGroup() {
+    const groupId = parseInt(document.getElementById('group-id').value);
+    if (!groupId || groupId <= 0) { showToast('请输入有效的群组ID', 'error'); return; }
+
+    try {
+        const r = await fetch(`${API}/api/group/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, group_id: groupId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('已加入群组');
+            loadGroups();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function leaveGroup(groupId, groupName) {
+    if (!confirm(`确定要退出群组 "${groupName}" 吗？`)) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, group_id: -groupId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('已退出群组');
+            loadGroups();
+            if (currentTarget && currentTarget.id === groupId && currentTarget.isGroup) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-input').disabled = true;
+                document.getElementById('btn-send').disabled = true;
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
 }
 
 // ==================== 好友管理 ====================

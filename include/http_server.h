@@ -48,6 +48,15 @@ private:
     std::string handleMessageRecall(const std::string& body);
     std::string handleUserProfile(int userId);
     std::string handleUserUpdate(const std::string& body);
+    std::string handleFolderList(int userId);
+    std::string handleFolderCreate(const std::string& body);
+    std::string handleFolderDelete(const std::string& body);
+    std::string handleFileMove(const std::string& body);
+    std::string handleFileByFolder(int folderId);
+    std::string handleGroupCreate(const std::string& body);
+    std::string handleGroupList(int userId);
+    std::string handleGroupJoin(const std::string& body);
+    std::string handleGroupMembers(int groupId);
 
     int m_port;
     bool m_running;
