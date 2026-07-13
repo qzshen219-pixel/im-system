@@ -138,9 +138,9 @@ void WsServer::onMessage(connection_hdl hdl, websocketpp::config::asio::message_
             std::string content = root["content"].asString();
             int msgType = root.get("msg_type", 1).asInt();
             int fileId = root.get("file_id", 0).asInt();
-            
+
             // 处理消息（保存到数据库）
-            m_msgHandler->handleChatMessage(userId, toUserId, content, msgType);
+            m_msgHandler->handleChatMessage(userId, toUserId, content, msgType, fileId);
             
             // 构建消息 JSON 并发送给接收者
             Json::Value msgJson;

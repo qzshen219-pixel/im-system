@@ -426,19 +426,19 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
     Json::Value result;
     result["code"] = 0;
     result["data"] = Json::arrayValue;
-    
+
     if (userId <= 0 || targetId <= 0) {
         return Json::FastWriter().write(result);
     }
-    
-    std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at FROM messages "
+
+    std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at, file_id FROM messages "
         "WHERE (from_user_id=" + std::to_string(userId) + " AND to_user_id=" + std::to_string(targetId) + ") "
         "OR (from_user_id=" + std::to_string(targetId) + " AND to_user_id=" + std::to_string(userId) + ") "
         "ORDER BY created_at ASC LIMIT 100";
-    
+
     m_mysql->query(sql);
     auto rows = m_mysql->getResult();
-    
+
     for (auto& row : rows) {
         Json::Value msg;
         msg["id"] = std::stoi(row[0]);
@@ -447,14 +447,18 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
         msg["content"] = row[3];
         msg["msg_type"] = std::stoi(row[4]);
         msg["time"] = row[5];
-        
+        int fileId = std::stoi(row[6]);
+        if (fileId > 0) {
+            msg["file_id"] = fileId;
+        }
+
         std::string fromName;
         m_userManager->getUserInfo(msg["from"].asInt(), fromName, fromName);
         msg["from_name"] = fromName;
-        
+
         result["data"].append(msg);
     }
-    
+
     return Json::FastWriter().write(result);
 }
 

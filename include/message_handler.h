@@ -29,8 +29,8 @@ public:
     ~MessageHandler();
 
     // 处理单聊消息
-    void handleChatMessage(int fromUserId, int toUserId, 
-                           const std::string& content, int msgType);
+    void handleChatMessage(int fromUserId, int toUserId,
+                           const std::string& content, int msgType, int fileId = 0);
 
     // 处理群聊消息
     void handleGroupMessage(int fromUserId, int groupId,
@@ -51,7 +51,7 @@ public:
 
 private:
     int saveMessage(int fromUserId, int toUserId, int groupId,
-                    const std::string& content, int msgType);
+                    const std::string& content, int msgType, int fileId = 0);
     
     void saveOfflineMessage(int userId, const Json::Value& msg);
     
