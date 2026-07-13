@@ -259,7 +259,10 @@ function receiveGroupMessage(data) {
     const groupId = data.group_id;
     const content = data.content;
     const time = data.time || new Date().toLocaleTimeString();
-    
+
+    // 忽略自己发送的消息
+    if (data.from === currentUser.id) return;
+
     if (!messages[groupId]) messages[groupId] = [];
     messages[groupId].push({
         from: data.from,
@@ -269,7 +272,7 @@ function receiveGroupMessage(data) {
         time: time,
         self: false
     });
-    
+
     if (currentTarget === -groupId) {
         renderMessages(groupId);
     } else {

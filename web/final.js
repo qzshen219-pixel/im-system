@@ -277,7 +277,10 @@ function receiveGroupMessage(data) {
     const groupId = data.group_id;
     const content = data.content;
     const time = data.time || new Date().toLocaleTimeString();
-    
+
+    // 忽略自己发送的消息（已经在 sendGroupMessage 中添加）
+    if (data.from === currentUser.id) return;
+
     if (!messages[groupId]) messages[groupId] = [];
     messages[groupId].push({
         from: data.from,
@@ -287,7 +290,7 @@ function receiveGroupMessage(data) {
         time: time,
         self: false
     });
-    
+
     if (currentTarget === -groupId) {
         renderMessages(groupId);
     } else {
@@ -786,7 +789,7 @@ async function loadGroups() {
 }
 
 async function createGroup() {
-    const name = document.getElementById('group-name').value.trim();
+    const name = document.getElementById('new-group-name').value.trim();
     if (!name) { showToast('请输入群组名称', 'error'); return; }
 
     try {
@@ -799,8 +802,8 @@ async function createGroup() {
         if (data.code === 0) {
             groups[data.data.id] = data.data;
             renderGroups();
-            document.getElementById('group-name').value = '';
-            showToast('群组创建成功');
+            document.getElementById('new-group-name').value = '';
+            showToast('群组创建成功，ID: ' + data.data.id);
         } else {
             showToast(data.message, 'error');
         }
