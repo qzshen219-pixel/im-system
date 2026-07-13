@@ -5,8 +5,9 @@
 #include "mysql_client.h"
 #include <iostream>
 #include <cstring>
-#include <thread>
-#include <chrono>
+#include <mutex>
+
+static std::mutex mysql_mutex;
 
 MysqlClient::MysqlClient(const std::string& host, const std::string& user,
                          const std::string& password, const std::string& database)
@@ -27,6 +28,8 @@ MysqlClient::~MysqlClient()
 
 bool MysqlClient::connect()
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
+
     m_conn = mysql_init(nullptr);
     if (!m_conn) {
         std::cerr << "[MySQL] 初始化失败" << std::endl;
@@ -35,10 +38,6 @@ bool MysqlClient::connect()
 
     // 设置字符集
     mysql_options(m_conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
-
-    // 启用自动重连
-    bool reconnect = true;
-    mysql_options(m_conn, MYSQL_OPT_RECONNECT, &reconnect);
 
     // 设置超时时间
     unsigned int connect_timeout = 60;
@@ -65,6 +64,8 @@ bool MysqlClient::connect()
 
 void MysqlClient::disconnect()
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
+
     if (m_result) {
         mysql_free_result(m_result);
         m_result = nullptr;
@@ -81,16 +82,58 @@ void MysqlClient::disconnect()
 
 bool MysqlClient::ensureConnection()
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
+
     if (!m_conn) {
         std::cerr << "[MySQL] 连接为null，尝试连接..." << std::endl;
-        return connect();
+        m_conn = mysql_init(nullptr);
+        if (!m_conn) {
+            return false;
+        }
+
+        mysql_options(m_conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
+        unsigned int timeout = 60;
+        mysql_options(m_conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+        mysql_options(m_conn, MYSQL_OPT_READ_TIMEOUT, &timeout);
+        mysql_options(m_conn, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
+
+        if (!mysql_real_connect(m_conn, m_host.c_str(), m_user.c_str(),
+                                m_password.c_str(), m_database.c_str(),
+                                0, nullptr, 0)) {
+            std::cerr << "[MySQL] 连接失败: " << mysql_error(m_conn) << std::endl;
+            mysql_close(m_conn);
+            m_conn = nullptr;
+            return false;
+        }
+        return true;
     }
 
     // 使用 ping 检查连接是否有效
     if (mysql_ping(m_conn) != 0) {
-        std::cerr << "[MySQL] 连接失效，尝试重连... 错误: " << mysql_error(m_conn) << std::endl;
-        disconnect();
-        return connect();
+        std::cerr << "[MySQL] 连接失效，尝试重连..." << std::endl;
+        mysql_close(m_conn);
+        m_conn = nullptr;
+
+        m_conn = mysql_init(nullptr);
+        if (!m_conn) {
+            return false;
+        }
+
+        mysql_options(m_conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
+        unsigned int timeout = 60;
+        mysql_options(m_conn, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
+        mysql_options(m_conn, MYSQL_OPT_READ_TIMEOUT, &timeout);
+        mysql_options(m_conn, MYSQL_OPT_WRITE_TIMEOUT, &timeout);
+
+        if (!mysql_real_connect(m_conn, m_host.c_str(), m_user.c_str(),
+                                m_password.c_str(), m_database.c_str(),
+                                0, nullptr, 0)) {
+            std::cerr << "[MySQL] 重连失败: " << mysql_error(m_conn) << std::endl;
+            mysql_close(m_conn);
+            m_conn = nullptr;
+            return false;
+        }
+        return true;
     }
 
     return true;
@@ -103,6 +146,8 @@ bool MysqlClient::query(const std::string& sql)
         std::cerr << "[MySQL] 无法建立连接" << std::endl;
         return false;
     }
+
+    std::lock_guard<std::mutex> lock(mysql_mutex);
 
     if (m_result) {
         mysql_free_result(m_result);
@@ -122,7 +167,14 @@ bool MysqlClient::query(const std::string& sql)
         // 连接相关错误，尝试重连
         if (errCode == 2006 || errCode == 2013 || errCode == 2014 || errCode == 2003) {
             std::cerr << "[MySQL] 连接错误，尝试重连..." << std::endl;
-            disconnect();
+            if (m_result) {
+                mysql_free_result(m_result);
+                m_result = nullptr;
+            }
+            if (m_conn) {
+                mysql_close(m_conn);
+                m_conn = nullptr;
+            }
             if (connect()) {
                 retryCount--;
                 continue;
@@ -140,6 +192,8 @@ bool MysqlClient::query(const std::string& sql)
 
 std::vector<std::vector<std::string>> MysqlClient::getResult()
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
+
     std::vector<std::vector<std::string>> rows;
 
     if (!m_result) return rows;
@@ -163,6 +217,7 @@ std::vector<std::vector<std::string>> MysqlClient::getResult()
 
 long long MysqlClient::insertId()
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
     if (!m_conn) return -1;
     return mysql_insert_id(m_conn);
 }
@@ -172,6 +227,8 @@ bool MysqlClient::prepare(const std::string& sql)
     if (!ensureConnection()) {
         return false;
     }
+
+    std::lock_guard<std::mutex> lock(mysql_mutex);
 
     if (m_stmt) {
         mysql_stmt_close(m_stmt);
@@ -190,6 +247,8 @@ bool MysqlClient::prepare(const std::string& sql)
 
 bool MysqlClient::bindParam(int index, const std::string& value)
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
+
     if (!m_stmt) return false;
 
     MYSQL_BIND bind;
@@ -209,6 +268,8 @@ bool MysqlClient::bindParam(int index, const std::string& value)
 
 bool MysqlClient::bindParam(int index, int value)
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
+
     if (!m_stmt) return false;
 
     MYSQL_BIND bind;
@@ -227,6 +288,8 @@ bool MysqlClient::bindParam(int index, int value)
 
 bool MysqlClient::execute()
 {
+    std::lock_guard<std::mutex> lock(mysql_mutex);
+
     if (!m_stmt) return false;
 
     if (mysql_stmt_execute(m_stmt) != 0) {
