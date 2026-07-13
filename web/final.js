@@ -471,6 +471,54 @@ async function recallMessage(messageId) {
     } catch (e) { showToast('网络错误', 'error'); }
 }
 
+// ==================== 消息转发 ====================
+function forwardMessage(messageId) {
+    const friendArray = Object.values(conversations).filter(c => c.type === 'user');
+    if (friendArray.length === 0) {
+        showToast('暂无好友，无法转发', 'error');
+        return;
+    }
+
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog-overlay';
+    dialog.innerHTML = `
+        <div class="dialog" style="max-width:400px">
+            <h3>转发消息</h3>
+            <div class="forward-list">
+                ${friendArray.map(f => `
+                    <div class="contact-item" onclick="confirmForward(${messageId}, ${f.id}, '${f.name}')">
+                        <div class="avatar" style="background: ${getAvatarColor(f.id)}">${f.name[0]}</div>
+                        <span class="name">${f.name}</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+}
+
+async function confirmForward(messageId, toUserId, toUserName) {
+    document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+
+    try {
+        const r = await fetch(`${API}/api/message/forward`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ msg_id: messageId, to_user_id: toUserId, from_user_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast(`消息已转发给 ${toUserName}`);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
 // ==================== 消息置顶 ====================
 function togglePin(messageId) {
     const userId = currentTarget < 0 ? -currentTarget : currentTarget;
@@ -562,8 +610,10 @@ function renderMessages(userId) {
         }
         
         const readStatus = m.self ? (m.read ? '<span class="read-status read">已读</span>' : '<span class="read-status">已发送</span>') : '';
-        const recallBtn = m.self && m.content && !m.content.startsWith('[消息已撤回]') ? 
+        const recallBtn = m.self && m.content && !m.content.startsWith('[消息已撤回]') ?
             `<button class="btn-recall" onclick="recallMessage(${m.id})">撤回</button>` : '';
+        const forwardBtn = m.content && !m.content.startsWith('[消息已撤回]') ?
+            `<button class="btn-recall" onclick="forwardMessage(${m.id})">转发</button>` : '';
         const pinBtn = `<button class="btn-pin" onclick="togglePin(${m.id})" title="${m.pinned ? '取消置顶' : '置顶'}">📌</button>`;
         
         return `
@@ -572,7 +622,7 @@ function renderMessages(userId) {
             <div class="content">
                 ${!m.self && m.from_name ? `<div class="sender-name">${m.from_name}</div>` : ''}
                 <div class="bubble">${messageContent}</div>
-                <div class="time">${m.time} ${readStatus} ${recallBtn} ${pinBtn}</div>
+                <div class="time">${m.time} ${readStatus} ${recallBtn} ${forwardBtn} ${pinBtn}</div>
             </div>
         </div>`;
     }).join('');
