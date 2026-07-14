@@ -142,6 +142,9 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/message/reply" && methodStr == "POST") {
         response = server->handleMessageReply(*body);
     }
+    else if (urlStr == "/api/message/read" && methodStr == "POST") {
+        response = server->handleMessageRead(*body);
+    }
     else if (urlStr == "/api/user/profile" && methodStr == "GET") {
         const char *userIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "user_id");
         int userId = userIdStr ? std::stoi(userIdStr) : 0;
@@ -461,7 +464,7 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
         return Json::FastWriter().write(result);
     }
 
-    std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at, file_id FROM messages "
+    std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at, file_id, status FROM messages "
         "WHERE (from_user_id=" + std::to_string(userId) + " AND to_user_id=" + std::to_string(targetId) + ") "
         "OR (from_user_id=" + std::to_string(targetId) + " AND to_user_id=" + std::to_string(userId) + ") "
         "ORDER BY created_at ASC LIMIT 100";
@@ -481,6 +484,7 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
         if (fileId > 0) {
             msg["file_id"] = fileId;
         }
+        msg["status"] = std::stoi(row[7]);
 
         std::string fromName;
         m_userManager->getUserInfo(msg["from"].asInt(), fromName, fromName);
@@ -611,6 +615,29 @@ std::string HttpServer::handleMessageReply(const std::string& body)
     result["code"] = 0;
     result["data"]["msg_id"] = newMsgId;
     return Json::FastWriter().write(result);
+}
+
+std::string HttpServer::handleMessageRead(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int userId = root["user_id"].asInt();
+    int fromUserId = root["from_user_id"].asInt();
+
+    if (userId <= 0 || fromUserId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 标记该用户收到的来自 fromUserId 的所有消息为已读
+    std::string sql = "UPDATE messages SET status=1 WHERE from_user_id=" + std::to_string(fromUserId)
+        + " AND to_user_id=" + std::to_string(userId) + " AND status=0";
+    m_mysql->query(sql);
+
+    return "{\"code\":0,\"message\":\"Messages marked as read\"}";
 }
 
 std::string HttpServer::handleUserProfile(int userId)

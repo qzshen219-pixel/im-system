@@ -1022,16 +1022,32 @@ async function loadMessageHistory(userId) {
                 from: m.from,
                 content: m.content,
                 file_id: m.file_id || null,
+                read: m.status === 1,
                 time: m.time,
                 self: m.from === currentUser.id,
                 from_name: m.from_name
             }));
             renderMessages(userId);
+
+            // 发送已读回执
+            markAsRead(userId);
         }
     } catch (e) {
         console.error('加载历史消息失败:', e);
         if (!messages[userId]) messages[userId] = [];
         renderMessages(userId);
+    }
+}
+
+async function markAsRead(fromUserId) {
+    try {
+        await fetch(`${API}/api/message/read`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, from_user_id: fromUserId })
+        });
+    } catch (e) {}
+}
     }
 }
 

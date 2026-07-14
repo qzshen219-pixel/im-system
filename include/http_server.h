@@ -48,6 +48,7 @@ private:
     std::string handleMessageRecall(const std::string& body);
     std::string handleMessageForward(const std::string& body);
     std::string handleMessageReply(const std::string& body);
+    std::string handleMessageRead(const std::string& body);
     std::string handleUserProfile(int userId);
     std::string handleUserUpdate(const std::string& body);
     std::string handleFolderList(int userId);
