@@ -188,6 +188,11 @@ MHD_Result HttpServer::requestHandler(void *cls,
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
         response = server->handleGroupMembers(groupId);
     }
+    else if (urlStr == "/api/group/messages" && methodStr == "GET") {
+        const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
+        int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
+        response = server->handleGroupMessages(groupId);
+    }
     else {
         status = MHD_HTTP_NOT_FOUND;
         response = "{\"error\":\"Not found\"}";
@@ -910,6 +915,38 @@ std::string HttpServer::handleGroupMembers(int groupId)
         member["role"] = std::stoi(row[3]);
         member["online"] = m_userManager->isOnline(std::stoi(row[0]));
         result["data"].append(member);
+    }
+
+    return Json::FastWriter().write(result);
+}
+
+std::string HttpServer::handleGroupMessages(int groupId)
+{
+    Json::Value result;
+    result["code"] = 0;
+    result["data"] = Json::arrayValue;
+
+    if (groupId <= 0) {
+        return Json::FastWriter().write(result);
+    }
+
+    // 群组消息存储在 messages 表中，使用 group_id 字段
+    std::string sql = "SELECT m.id, m.from_user_id, m.content, m.msg_type, m.created_at, u.username, u.nickname "
+        "FROM messages m JOIN users u ON m.from_user_id = u.id "
+        "WHERE m.group_id = " + std::to_string(groupId) + " "
+        "ORDER BY m.created_at ASC LIMIT 200";
+    m_mysql->query(sql);
+    auto rows = m_mysql->getResult();
+
+    for (auto& row : rows) {
+        Json::Value msg;
+        msg["id"] = std::stoi(row[0]);
+        msg["from"] = std::stoi(row[1]);
+        msg["content"] = row[2];
+        msg["msg_type"] = std::stoi(row[3]);
+        msg["time"] = row[4];
+        msg["from_name"] = row[6].empty() ? row[5] : row[6];
+        result["data"].append(msg);
     }
 
     return Json::FastWriter().write(result);

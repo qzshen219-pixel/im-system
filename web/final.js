@@ -1040,20 +1040,31 @@ function startGroupChat(groupId, groupName) {
     document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span>`;
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
-    
-    if (!messages[groupId]) messages[groupId] = [];
-    renderMessages(groupId);
+
+    // 从服务器加载群组历史消息
+    loadGroupMessages(groupId);
 }
 
-function createGroup() {
-    const name = document.getElementById('new-group-name').value.trim();
-    if (!name) { showToast('请输入群组名称', 'error'); return; }
-    
-    const groupId = 1000 + Object.keys(groups).length + 1;
-    groups[groupId] = { id: groupId, name: name, members: [currentUser.id] };
-    renderGroups();
-    document.getElementById('new-group-name').value = '';
-    showToast('群组 "' + name + '" 创建成功');
+async function loadGroupMessages(groupId) {
+    try {
+        const r = await fetch(`${API}/api/group/messages?group_id=${groupId}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            messages[groupId] = data.data.map(m => ({
+                id: m.id,
+                from: m.from,
+                content: m.content,
+                time: m.time,
+                self: m.from === currentUser.id,
+                from_name: m.from_name
+            }));
+            renderMessages(groupId);
+        }
+    } catch (e) {
+        console.error('加载群组消息失败:', e);
+        if (!messages[groupId]) messages[groupId] = [];
+        renderMessages(groupId);
+    }
 }
 
 // ==================== 文件夹管理 ====================
