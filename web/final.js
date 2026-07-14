@@ -1037,12 +1037,43 @@ async function loadMessageHistory(userId) {
 
 function startGroupChat(groupId, groupName) {
     currentTarget = -groupId;
-    document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span>`;
+    document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span> <button class="btn-recall" onclick="showGroupMembers(${groupId})" style="margin-left:8px;font-size:11px">成员</button>`;
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
 
     // 从服务器加载群组历史消息
     loadGroupMessages(groupId);
+}
+
+async function showGroupMembers(groupId) {
+    try {
+        const r = await fetch(`${API}/api/group/members?group_id=${groupId}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            const dialog = document.createElement('div');
+            dialog.className = 'dialog-overlay';
+            dialog.innerHTML = `
+                <div class="dialog" style="max-width:400px">
+                    <h3>群组成员 (${data.data.length}人)</h3>
+                    <div class="member-list">
+                        ${data.data.map(m => `
+                            <div class="contact-item">
+                                <div class="avatar" style="background: ${getAvatarColor(m.id)}">${(m.nickname || m.username)[0]}</div>
+                                <span class="name">${m.nickname || m.username}</span>
+                                <div class="status ${m.online ? 'online' : ''}"></div>
+                                ${m.role === 1 ? '<span style="color:var(--primary);font-size:12px;margin-left:4px">群主</span>' : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="dialog-actions">
+                        <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">关闭</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(dialog);
+            dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+        }
+    } catch (e) { showToast('加载成员失败', 'error'); }
 }
 
 async function loadGroupMessages(groupId) {
