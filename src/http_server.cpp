@@ -191,6 +191,9 @@ MHD_Result HttpServer::requestHandler(void *cls,
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
         response = server->handleGroupMembers(groupId);
     }
+    else if (urlStr == "/api/group/remove" && methodStr == "POST") {
+        response = server->handleGroupRemove(*body);
+    }
     else if (urlStr == "/api/group/messages" && methodStr == "GET") {
         const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
@@ -945,6 +948,44 @@ std::string HttpServer::handleGroupMembers(int groupId)
     }
 
     return Json::FastWriter().write(result);
+}
+
+std::string HttpServer::handleGroupRemove(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+    int operatorId = root["operator_id"].asInt();
+
+    if (groupId <= 0 || userId <= 0 || operatorId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查操作者是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(operatorId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以删除成员\"}";
+    }
+
+    // 不能删除自己
+    if (userId == operatorId) {
+        return "{\"code\":1,\"message\":\"不能删除自己\"}";
+    }
+
+    // 删除成员
+    std::string sql = "DELETE FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(sql);
+
+    return "{\"code\":0,\"message\":\"成员已删除\"}";
 }
 
 std::string HttpServer::handleGroupMessages(int groupId)

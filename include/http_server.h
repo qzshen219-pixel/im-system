@@ -60,6 +60,7 @@ private:
     std::string handleGroupList(int userId);
     std::string handleGroupJoin(const std::string& body);
     std::string handleGroupMembers(int groupId);
+    std::string handleGroupRemove(const std::string& body);
     std::string handleGroupMessages(int groupId);
 
     int m_port;

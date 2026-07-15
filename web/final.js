@@ -1106,6 +1106,9 @@ async function showGroupMembers(groupId) {
         const r = await fetch(`${API}/api/group/members?group_id=${groupId}`);
         const data = await r.json();
         if (data.code === 0) {
+            // 检查当前用户是否是群主
+            const isOwner = data.data.some(m => m.id === currentUser.id && m.role === 1);
+
             const dialog = document.createElement('div');
             dialog.className = 'dialog-overlay';
             dialog.innerHTML = `
@@ -1118,6 +1121,7 @@ async function showGroupMembers(groupId) {
                                 <span class="name">${m.nickname || m.username}</span>
                                 <div class="status ${m.online ? 'online' : ''}"></div>
                                 ${m.role === 1 ? '<span style="color:var(--primary);font-size:12px;margin-left:4px">群主</span>' : ''}
+                                ${isOwner && m.id !== currentUser.id ? `<button class="btn-recall" onclick="removeGroupMember(${groupId}, ${m.id})" style="margin-left:auto">移除</button>` : ''}
                             </div>
                         `).join('')}
                     </div>
@@ -1130,6 +1134,27 @@ async function showGroupMembers(groupId) {
             dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
         }
     } catch (e) { showToast('加载成员失败', 'error'); }
+}
+
+async function removeGroupMember(groupId, userId) {
+    if (!confirm('确定要移除此成员吗？')) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/remove`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: userId, operator_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('成员已移除');
+            // 刷新成员列表
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            showGroupMembers(groupId);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
 }
 
 async function loadGroupMessages(groupId) {
