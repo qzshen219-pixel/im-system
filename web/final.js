@@ -1048,8 +1048,6 @@ async function markAsRead(fromUserId) {
         });
     } catch (e) {}
 }
-    }
-}
 
 function startGroupChat(groupId, groupName) {
     currentTarget = -groupId;
