@@ -106,7 +106,15 @@ function enterChat() {
     // 显示头像
     const avatarEl = document.getElementById('currentAvatar');
     if (currentUser.avatar_id && currentUser.avatar_id > 0) {
-        avatarEl.innerHTML = `<img src="${API}/api/download?file_id=${currentUser.avatar_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+        // 使用base64数据直接显示
+        fetch(`${API}/api/download?file_id=${currentUser.avatar_id}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.code === 0 && data.data && data.data.file_data) {
+                    avatarEl.innerHTML = `<img src="data:image/jpeg;base64,${data.data.file_data}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                }
+            })
+            .catch(() => {});
     } else {
         avatarEl.textContent = (currentUser.nickname || currentUser.username)[0];
     }
@@ -1850,13 +1858,13 @@ async function uploadAvatar(event) {
                 // 更新对话框中的头像预览
                 const dialogAvatar = document.querySelector('.dialog-overlay .avatar');
                 if (dialogAvatar) {
-                    dialogAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                    dialogAvatar.innerHTML = `<img src="data:image/jpeg;base64,${base64}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 }
 
                 // 更新左上角头像
                 const currentAvatar = document.getElementById('currentAvatar');
                 if (currentAvatar) {
-                    currentAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                    currentAvatar.innerHTML = `<img src="data:image/jpeg;base64,${base64}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 }
 
                 showToast('头像已更新');
