@@ -1046,11 +1046,6 @@ function renderMessages(userId) {
             </div>
         </div>`;
     }).join('');
-
-    // 自动滚动到底部显示最新消息
-    setTimeout(() => {
-        list.scrollTop = list.scrollHeight;
-    }, 50);
 }
 
 let avatarCache = {};
