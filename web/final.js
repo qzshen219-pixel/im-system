@@ -1007,11 +1007,11 @@ function renderMessages(userId) {
                          alt="图片" 
                          onclick="previewImage(${m.file_id})"
                          loading="lazy"
-                         style="cursor:pointer;max-width:300px;border-radius:8px;">
+                         style="cursor:pointer;max-width:300px;border-radius:8px;min-height:50px;background:var(--bg);">
                     <button class="btn-download" onclick="downloadFile(${m.file_id})">下载</button>
                 </div>`;
-            // 异步加载图片
-            loadMessageImage(m.file_id);
+            // 使用Promise确保DOM渲染后加载图片
+            Promise.resolve().then(() => loadMessageImage(m.file_id));
         } else if (isFile && m.file_id) {
             messageContent = `
                 <div class="file-message">
