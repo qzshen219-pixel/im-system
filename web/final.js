@@ -1047,10 +1047,10 @@ function renderMessages(userId) {
         </div>`;
     }).join('');
 
-    // 只有在加载新消息时才滚动到底部，加载历史消息时保持位置
-    if (!messageLoading[userId]) {
+    // 自动滚动到底部显示最新消息
+    setTimeout(() => {
         list.scrollTop = list.scrollHeight;
-    }
+    }, 50);
 }
 
 let avatarCache = {};
@@ -1616,6 +1616,7 @@ async function loadGroupMessages(groupId) {
                 id: m.id,
                 from: m.from,
                 content: m.content,
+                file_id: m.file_id || null,
                 time: m.time,
                 self: m.from === currentUser.id,
                 from_name: m.from_name
