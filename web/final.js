@@ -1389,6 +1389,14 @@ async function loadMessageHistory(userId, loadMore = false) {
 
             messageOffset[userId] = offset + 50;
             renderMessages(userId);
+
+            // 首次加载时滚动到底部显示最新消息
+            if (!loadMore) {
+                setTimeout(() => {
+                    const list = document.getElementById('msg-list');
+                    if (list) list.scrollTop = list.scrollHeight;
+                }, 50);
+            }
         }
     } catch (e) {
         console.error('加载历史消息失败:', e);
@@ -1617,6 +1625,12 @@ async function loadGroupMessages(groupId) {
                 from_name: m.from_name
             }));
             renderMessages(groupId);
+
+            // 滚动到底部显示最新消息
+            setTimeout(() => {
+                const list = document.getElementById('msg-list');
+                if (list) list.scrollTop = list.scrollHeight;
+            }, 50);
         }
     } catch (e) {
         console.error('加载群组消息失败:', e);
