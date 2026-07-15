@@ -1,4 +1,4 @@
-const API = 'http://172.22.120.246:8080';
+const API = window.location.protocol + '//' + window.location.hostname + ':8080';
 let currentUser = null;
 let ws = null;
 let currentTarget = null;
@@ -121,7 +121,7 @@ const BASE_DELAY = 1000;
 function connectWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) return;
     
-    const wsUrl = `ws://172.22.120.246:8001`;
+    const wsUrl = `ws://${window.location.hostname}:8001`;
     ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
