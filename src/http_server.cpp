@@ -665,11 +665,11 @@ std::string HttpServer::handleUserProfile(int userId)
     Json::Value result;
     result["code"] = 0;
     result["data"] = Json::objectValue;
-    
-    std::string sql = "SELECT id, username, nickname, email, phone, created_at FROM users WHERE id=" + std::to_string(userId);
+
+    std::string sql = "SELECT id, username, nickname, email, phone, created_at, avatar_id FROM users WHERE id=" + std::to_string(userId);
     m_mysql->query(sql);
     auto rows = m_mysql->getResult();
-    
+
     if (rows.empty()) {
         result["code"] = 1;
         result["message"] = "User not found";
@@ -680,8 +680,9 @@ std::string HttpServer::handleUserProfile(int userId)
         result["data"]["email"] = rows[0][3];
         result["data"]["phone"] = rows[0][4];
         result["data"]["created_at"] = rows[0][5];
+        result["data"]["avatar_id"] = std::stoi(rows[0][6]);
     }
-    
+
     return Json::FastWriter().write(result);
 }
 
