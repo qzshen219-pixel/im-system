@@ -545,6 +545,98 @@ async function sendVoiceMessage() {
     reader.readAsDataURL(blob);
 }
 
+// ==================== 视频消息 ====================
+let videoRecorder = null;
+let videoChunks = [];
+let isRecordingVideo = false;
+let videoStream = null;
+
+function toggleVideoRecording() {
+    if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
+
+    if (isRecordingVideo) {
+        stopVideoRecording();
+    } else {
+        startVideoRecording();
+    }
+}
+
+function startVideoRecording() {
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+            isRecordingVideo = true;
+            videoChunks = [];
+            videoStream = stream;
+            videoRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            videoRecorder.ondataavailable = e => videoChunks.push(e.data);
+            videoRecorder.onstop = () => {
+                stream.getTracks().forEach(t => t.stop());
+                if (isRecordingVideo) sendVideoMessage();
+            };
+            videoRecorder.start();
+            document.getElementById('videoBtn').style.background = 'var(--red)';
+            document.getElementById('videoBtn').style.color = '#fff';
+            showToast('正在录制视频...');
+        })
+        .catch(() => showToast('无法访问摄像头', 'error'));
+}
+
+function stopVideoRecording() {
+    if (videoRecorder && isRecordingVideo) {
+        isRecordingVideo = false;
+        videoRecorder.stop();
+        document.getElementById('videoBtn').style.background = '';
+        document.getElementById('videoBtn').style.color = '';
+    }
+}
+
+async function sendVideoMessage() {
+    if (videoChunks.length === 0) return;
+
+    const blob = new Blob(videoChunks, { type: 'video/webm' });
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        const displayContent = '[视频] ' + Math.round(blob.size / 1024) + 'KB';
+
+        try {
+            const r = await fetch(`${API}/api/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: 'video_' + Date.now() + '.webm',
+                    file_data: base64,
+                    from_user_id: currentUser.id,
+                    to_user_id: currentTarget < 0 ? 0 : currentTarget
+                })
+            });
+            const data = await r.json();
+            if (data.code === 0) {
+                const msg = {
+                    type: 'chat',
+                    to: currentTarget,
+                    content: displayContent,
+                    msg_type: 6,
+                    file_id: data.data.file_id
+                };
+                ws.send(JSON.stringify(msg));
+
+                if (!messages[currentTarget]) messages[currentTarget] = [];
+                messages[currentTarget].push({
+                    from: currentUser.id,
+                    content: displayContent,
+                    file_id: data.data.file_id,
+                    time: new Date().toISOString(),
+                    self: true
+                });
+                renderMessages(currentTarget);
+                showToast('视频发送成功');
+            }
+        } catch (e) { showToast('视频发送失败', 'error'); }
+    };
+    reader.readAsDataURL(blob);
+}
+
 function downloadFile(fileId) {
     fetch(`${API}/api/download?file_id=${fileId}`)
     .then(r => r.json())
@@ -816,9 +908,16 @@ function renderMessages(userId) {
         const isImage = m.content && m.content.startsWith('[图片]');
         const isFile = m.content && m.content.startsWith('[文件]');
         const isVoice = m.content && m.content.startsWith('[语音]');
+        const isVideo = m.content && m.content.startsWith('[视频]');
 
         let messageContent = '';
-        if (isVoice && m.file_id) {
+        if (isVideo && m.file_id) {
+            messageContent = `
+                <div class="video-message">
+                    <video controls src="${API}/api/download?file_id=${m.file_id}" style="max-width:300px;border-radius:8px;"></video>
+                    <button class="btn-download" onclick="downloadFile(${m.file_id})" style="margin-top:4px">下载</button>
+                </div>`;
+        } else if (isVoice && m.file_id) {
             messageContent = `
                 <div class="voice-message">
                     <audio controls src="${API}/api/download?file_id=${m.file_id}" style="max-width:200px;"></audio>

@@ -594,6 +594,12 @@ body {
     height: 36px;
 }
 
+.video-message {
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+}
+
 .file-message {
     display: flex;
     align-items: center;
