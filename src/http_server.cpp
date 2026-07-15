@@ -198,6 +198,12 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/group/remove" && methodStr == "POST") {
         response = server->handleGroupRemove(*body);
     }
+    else if (urlStr == "/api/group/dissolve" && methodStr == "POST") {
+        response = server->handleGroupDissolve(*body);
+    }
+    else if (urlStr == "/api/group/leave" && methodStr == "POST") {
+        response = server->handleGroupLeave(*body);
+    }
     else if (urlStr == "/api/group/messages" && methodStr == "GET") {
         const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
@@ -997,6 +1003,72 @@ std::string HttpServer::handleGroupRemove(const std::string& body)
     m_mysql->query(sql);
 
     return "{\"code\":0,\"message\":\"成员已删除\"}";
+}
+
+std::string HttpServer::handleGroupDissolve(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+
+    if (groupId <= 0 || userId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以解散群组\"}";
+    }
+
+    // 删除所有成员
+    m_mysql->query("DELETE FROM group_members WHERE group_id=" + std::to_string(groupId));
+    // 删除群组
+    m_mysql->query("DELETE FROM groups_table WHERE id=" + std::to_string(groupId));
+
+    return "{\"code\":0,\"message\":\"群组已解散\"}";
+}
+
+std::string HttpServer::handleGroupLeave(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+
+    if (groupId <= 0 || userId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查是否是群主（群主不能退出）
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty()) {
+        return "{\"code\":1,\"message\":\"你不是群组成员\"}";
+    }
+    if (std::stoi(checkRows[0][0]) == 1) {
+        return "{\"code\":1,\"message\":\"群主不能退出群组，请先解散或转让群组\"}";
+    }
+
+    // 删除成员
+    m_mysql->query("DELETE FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId));
+
+    return "{\"code\":0,\"message\":\"已退出群组\"}";
 }
 
 std::string HttpServer::handleGroupMessages(int groupId)

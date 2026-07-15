@@ -1342,6 +1342,7 @@ async function showGroupMembers(groupId) {
                         `).join('')}
                     </div>
                     <div class="dialog-actions">
+                        ${isOwner ? `<button class="dialog-cancel" style="background:var(--red);color:#fff" onclick="dissolveGroup(${groupId})">解散群组</button>` : `<button class="dialog-cancel" onclick="leaveGroup(${groupId})">退出群组</button>`}
                         <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">关闭</button>
                     </div>
                 </div>
@@ -1364,9 +1365,62 @@ async function removeGroupMember(groupId, userId) {
         const data = await r.json();
         if (data.code === 0) {
             showToast('成员已移除');
-            // 刷新成员列表
             document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
             showGroupMembers(groupId);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function dissolveGroup(groupId) {
+    if (!confirm('确定要解散此群组吗？此操作不可撤销！')) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/dissolve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('群组已解散');
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            loadGroups();
+            if (currentTarget === -groupId) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+            delete conversations['group_' + groupId];
+            renderConversations();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function leaveGroup(groupId) {
+    if (!confirm('确定要退出此群组吗？')) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/leave`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('已退出群组');
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            loadGroups();
+            if (currentTarget === -groupId) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+            delete conversations['group_' + groupId];
+            renderConversations();
         } else {
             showToast(data.message, 'error');
         }
