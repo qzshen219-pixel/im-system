@@ -708,15 +708,46 @@ function downloadFile(fileId) {
     .catch(() => showToast('文件下载失败', 'error'));
 }
 
+function loadMessageImage(fileId) {
+    if (avatarCache['img_' + fileId]) {
+        const img = document.getElementById(`img-${fileId}`);
+        if (img) img.src = avatarCache['img_' + fileId];
+        return;
+    }
+    fetch(`${API}/api/download?file_id=${fileId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.code === 0 && data.data && data.data.file_data) {
+                const base64 = 'data:image/jpeg;base64,' + data.data.file_data;
+                avatarCache['img_' + fileId] = base64;
+                const img = document.getElementById(`img-${fileId}`);
+                if (img) img.src = base64;
+            }
+        })
+        .catch(() => {});
+}
+
 function previewImage(fileId) {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer;';
     overlay.onclick = () => overlay.remove();
-    
+
     const img = document.createElement('img');
-    img.src = `${API}/api/download?file_id=${fileId}`;
     img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;';
-    
+
+    // 使用缓存的图片数据
+    if (avatarCache['img_' + fileId]) {
+        img.src = avatarCache['img_' + fileId];
+    } else {
+        fetch(`${API}/api/download?file_id=${fileId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.code === 0 && data.data && data.data.file_data) {
+                    img.src = 'data:image/jpeg;base64,' + data.data.file_data;
+                }
+            });
+    }
+
     overlay.appendChild(img);
     document.body.appendChild(overlay);
 }
@@ -971,12 +1002,16 @@ function renderMessages(userId) {
         } else if (isImage && m.file_id) {
             messageContent = `
                 <div class="image-message">
-                    <img src="${API}/api/download?file_id=${m.file_id}" 
+                    <img src="" 
+                         id="img-${m.file_id}"
                          alt="图片" 
                          onclick="previewImage(${m.file_id})"
-                         loading="lazy">
+                         loading="lazy"
+                         style="cursor:pointer;max-width:300px;border-radius:8px;">
                     <button class="btn-download" onclick="downloadFile(${m.file_id})">下载</button>
                 </div>`;
+            // 异步加载图片
+            loadMessageImage(m.file_id);
         } else if (isFile && m.file_id) {
             messageContent = `
                 <div class="file-message">
