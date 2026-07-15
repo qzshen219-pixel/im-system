@@ -1028,7 +1028,13 @@ function renderMessages(userId) {
         }
         
         const readStatus = m.self ? (m.read ? '<span class="read-status read">已读</span>' : '<span class="read-status">已发送</span>') : '';
-        const recallBtn = m.self && m.content && !m.content.startsWith('[消息已撤回]') ?
+
+        // 检查消息是否在2分钟内（可以撤回）
+        const msgTime = new Date(m.time);
+        const now = new Date();
+        const canRecall = m.self && m.content && !m.content.startsWith('[消息已撤回]') && (now - msgTime) < 120000;
+
+        const recallBtn = canRecall ?
             `<button class="btn-recall" onclick="recallMessage(${m.id})">撤回</button>` : '';
         const forwardBtn = m.content && !m.content.startsWith('[消息已撤回]') ?
             `<button class="btn-recall" onclick="forwardMessage(${m.id})">转发</button>` : '';

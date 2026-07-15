@@ -524,33 +524,44 @@ std::string HttpServer::handleMessageRecall(const std::string& body)
     if (!reader.parse(body, root)) {
         return "{\"code\":1,\"message\":\"Invalid JSON\"}";
     }
-    
+
     int messageId = root["message_id"].asInt();
     int userId = root["user_id"].asInt();
-    
+
     if (messageId <= 0 || userId <= 0) {
         return "{\"code\":1,\"message\":\"Invalid parameters\"}";
     }
-    
-    // 验证消息是否属于该用户
-    std::string checkSql = "SELECT from_user_id FROM messages WHERE id=" + std::to_string(messageId);
+
+    // 验证消息是否属于该用户，并检查时间
+    std::string checkSql = "SELECT from_user_id, created_at FROM messages WHERE id=" + std::to_string(messageId);
     m_mysql->query(checkSql);
     auto rows = m_mysql->getResult();
-    
+
     if (rows.empty()) {
-        return "{\"code\":1,\"message\":\"Message not found\"}";
+        return "{\"code\":1,\"message\":\"消息不存在\"}";
     }
-    
+
     int fromUserId = std::stoi(rows[0][0]);
     if (fromUserId != userId) {
-        return "{\"code\":1,\"message\":\"Cannot recall others message\"}";
+        return "{\"code\":1,\"message\":\"只能撤回自己的消息\"}";
     }
-    
-    // 更新消息内容为已撤回
-    std::string sql = "UPDATE messages SET content='[消息已撤回]', msg_type=4 WHERE id=" + std::to_string(messageId);
+
+    // 检查消息时间是否在2分钟内
+    std::string createTime = rows[0][1];
+    std::string sql = "SELECT TIMESTAMPDIFF(SECOND, '" + createTime + "', NOW())";
     m_mysql->query(sql);
-    
-    return "{\"code\":0,\"message\":\"Message recalled\"}";
+    auto timeRows = m_mysql->getResult();
+    int secondsDiff = std::stoi(timeRows[0][0]);
+
+    if (secondsDiff > 120) {
+        return "{\"code\":1,\"message\":\"消息发送超过2分钟，无法撤回\"}";
+    }
+
+    // 更新消息内容为已撤回
+    std::string updateSql = "UPDATE messages SET content='[消息已撤回]', msg_type=4 WHERE id=" + std::to_string(messageId);
+    m_mysql->query(updateSql);
+
+    return "{\"code\":0,\"message\":\"消息已撤回\"}";
 }
 
 std::string HttpServer::handleMessageForward(const std::string& body)
