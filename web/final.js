@@ -455,6 +455,7 @@ function handleFileUpload(event) {
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
+let shouldSendVoice = false;
 
 function toggleVoiceRecording() {
     if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
@@ -472,17 +473,19 @@ function startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true })
         .then(stream => {
             isRecording = true;
+            shouldSendVoice = true;
             audioChunks = [];
             mediaRecorder = new MediaRecorder(stream);
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
             mediaRecorder.onstop = () => {
                 stream.getTracks().forEach(t => t.stop());
-                if (isRecording) sendVoiceMessage();
+                if (shouldSendVoice) sendVoiceMessage();
+                shouldSendVoice = false;
             };
             mediaRecorder.start();
             document.getElementById('voiceBtn').style.background = 'var(--red)';
             document.getElementById('voiceBtn').style.color = '#fff';
-            showToast('正在录音...');
+            showToast('正在录音，再次点击发送');
         })
         .catch(() => showToast('无法访问麦克风', 'error'));
 }
@@ -499,6 +502,7 @@ function stopRecording() {
 function cancelRecording() {
     if (mediaRecorder && isRecording) {
         isRecording = false;
+        shouldSendVoice = false;
         mediaRecorder.stop();
         audioChunks = [];
         document.getElementById('voiceBtn').style.background = '';
@@ -560,6 +564,7 @@ let videoRecorder = null;
 let videoChunks = [];
 let isRecordingVideo = false;
 let videoStream = null;
+let shouldSendVideo = false;
 
 function toggleVideoRecording() {
     if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
@@ -575,18 +580,20 @@ function startVideoRecording() {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .then(stream => {
             isRecordingVideo = true;
+            shouldSendVideo = true;
             videoChunks = [];
             videoStream = stream;
             videoRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
             videoRecorder.ondataavailable = e => videoChunks.push(e.data);
             videoRecorder.onstop = () => {
                 stream.getTracks().forEach(t => t.stop());
-                if (isRecordingVideo) sendVideoMessage();
+                if (shouldSendVideo) sendVideoMessage();
+                shouldSendVideo = false;
             };
             videoRecorder.start();
             document.getElementById('videoBtn').style.background = 'var(--red)';
             document.getElementById('videoBtn').style.color = '#fff';
-            showToast('正在录制视频...');
+            showToast('正在录制视频，再次点击发送');
         })
         .catch(() => showToast('无法访问摄像头', 'error'));
 }
@@ -1355,7 +1362,10 @@ async function showGroupMembers(groupId) {
                         `).join('')}
                     </div>
                     <div class="dialog-actions">
-                        ${isOwner ? `<button class="dialog-cancel" style="background:var(--red);color:#fff" onclick="dissolveGroup(${groupId})">解散群组</button>` : `<button class="dialog-cancel" onclick="leaveGroup(${groupId})">退出群组</button>`}
+                        ${isOwner ? `
+                            <button class="dialog-cancel" style="background:var(--red);color:#fff" onclick="dissolveGroup(${groupId})">解散群组</button>
+                            <button class="dialog-cancel" style="background:var(--primary);color:#fff" onclick="transferGroup(${groupId})">转让群组</button>
+                        ` : `<button class="dialog-cancel" onclick="leaveGroup(${groupId})">退出群组</button>`}
                         <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">关闭</button>
                     </div>
                 </div>
@@ -1434,6 +1444,63 @@ async function leaveGroup(groupId) {
             }
             delete conversations['group_' + groupId];
             renderConversations();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function transferGroup(groupId) {
+    // 获取群组成员列表
+    try {
+        const r = await fetch(`${API}/api/group/members?group_id=${groupId}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            const members = data.data.filter(m => m.id !== currentUser.id);
+            if (members.length === 0) {
+                showToast('没有其他成员可以转让', 'error');
+                return;
+            }
+
+            const dialog = document.createElement('div');
+            dialog.className = 'dialog-overlay';
+            dialog.innerHTML = `
+                <div class="dialog" style="max-width:400px">
+                    <h3>转让群组给</h3>
+                    <div class="member-list">
+                        ${members.map(m => `
+                            <div class="contact-item" onclick="confirmTransfer(${groupId}, ${m.id}, '${m.nickname || m.username}')">
+                                <div class="avatar" style="background: ${getAvatarColor(m.id)}">${(m.nickname || m.username)[0]}</div>
+                                <span class="name">${m.nickname || m.username}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="dialog-actions">
+                        <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(dialog);
+            dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+        }
+    } catch (e) { showToast('加载成员失败', 'error'); }
+}
+
+async function confirmTransfer(groupId, toUserId, toUserName) {
+    if (!confirm(`确定要将群组转让给 ${toUserName} 吗？`)) return;
+
+    document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+
+    try {
+        const r = await fetch(`${API}/api/group/transfer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, from_user_id: currentUser.id, to_user_id: toUserId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('群组已转让给 ' + toUserName);
+            showGroupMembers(groupId);
         } else {
             showToast(data.message, 'error');
         }
@@ -1759,13 +1826,14 @@ async function uploadAvatar(event) {
                 });
                 currentUser.avatar_id = data.data.file_id;
                 sessionStorage.setItem('user', JSON.stringify(currentUser));
+
+                // 更新对话框中的头像预览
+                const dialogAvatar = document.querySelector('.dialog-overlay .avatar');
+                if (dialogAvatar) {
+                    dialogAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                }
+
                 showToast('头像已更新');
-                // 刷新页面显示新头像
-                document.querySelectorAll('.avatar').forEach(a => {
-                    if (a.id === 'currentAvatar') {
-                        a.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-                    }
-                });
             }
         } catch (e) { showToast('上传失败', 'error'); }
     };

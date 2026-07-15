@@ -204,6 +204,9 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/group/leave" && methodStr == "POST") {
         response = server->handleGroupLeave(*body);
     }
+    else if (urlStr == "/api/group/transfer" && methodStr == "POST") {
+        response = server->handleGroupTransfer(*body);
+    }
     else if (urlStr == "/api/group/messages" && methodStr == "GET") {
         const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
@@ -1069,6 +1072,49 @@ std::string HttpServer::handleGroupLeave(const std::string& body)
         + " AND user_id=" + std::to_string(userId));
 
     return "{\"code\":0,\"message\":\"已退出群组\"}";
+}
+
+std::string HttpServer::handleGroupTransfer(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int fromUserId = root["from_user_id"].asInt();
+    int toUserId = root["to_user_id"].asInt();
+
+    if (groupId <= 0 || fromUserId <= 0 || toUserId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查操作者是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(fromUserId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以转让群组\"}";
+    }
+
+    // 检查目标用户是否是群成员
+    std::string memberCheckSql = "SELECT user_id FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(toUserId);
+    m_mysql->query(memberCheckSql);
+    auto memberRows = m_mysql->getResult();
+    if (memberRows.empty()) {
+        return "{\"code\":1,\"message\":\"目标用户不是群组成员\"}";
+    }
+
+    // 转让群组
+    m_mysql->query("UPDATE group_members SET role=0 WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(fromUserId));
+    m_mysql->query("UPDATE group_members SET role=1 WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(toUserId));
+
+    return "{\"code\":0,\"message\":\"群组已转让\"}";
 }
 
 std::string HttpServer::handleGroupMessages(int groupId)
