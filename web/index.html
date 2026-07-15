@@ -105,6 +105,7 @@
                     <div class="input-toolbar">
                         <button class="toolbar-btn" onclick="toggleEmojiPicker()" title="表情" id="emojiBtn">😊</button>
                         <button class="toolbar-btn" onclick="document.getElementById('file-input').click()" title="发送文件">📎</button>
+                        <button class="toolbar-btn" id="voiceBtn" onmousedown="startRecording()" onmouseup="stopRecording()" onmouseleave="cancelRecording()" title="按住说话">🎤</button>
                         <input type="file" id="file-input" style="display:none" onchange="handleFileUpload(event)">
                     </div>
                     <div class="emoji-picker" id="emoji-picker" style="display:none;">
@@ -212,6 +213,6 @@
     <!-- Toast 提示 -->
     <div id="toast" class="toast"></div>
 
-    <script src="final.js?v=5"></script>
+    <script src="final.js?v=6"></script>
 </body>
 </html>

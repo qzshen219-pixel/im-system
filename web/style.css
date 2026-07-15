@@ -584,6 +584,16 @@ body {
 }
 
 /* 文件消息 */
+.voice-message {
+    display: flex;
+    align-items: center;
+    padding: 4px;
+}
+
+.voice-message audio {
+    height: 36px;
+}
+
 .file-message {
     display: flex;
     align-items: center;

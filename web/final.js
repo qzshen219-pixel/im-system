@@ -451,6 +451,100 @@ function handleFileUpload(event) {
     event.target.value = '';
 }
 
+// ==================== 语音消息 ====================
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+function startRecording() {
+    if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            isRecording = true;
+            audioChunks = [];
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                stream.getTracks().forEach(t => t.stop());
+                if (isRecording) sendVoiceMessage();
+            };
+            mediaRecorder.start();
+            document.getElementById('voiceBtn').style.background = 'var(--red)';
+            document.getElementById('voiceBtn').style.color = '#fff';
+            showToast('正在录音...');
+        })
+        .catch(() => showToast('无法访问麦克风', 'error'));
+}
+
+function stopRecording() {
+    if (mediaRecorder && isRecording) {
+        isRecording = false;
+        mediaRecorder.stop();
+        document.getElementById('voiceBtn').style.background = '';
+        document.getElementById('voiceBtn').style.color = '';
+    }
+}
+
+function cancelRecording() {
+    if (mediaRecorder && isRecording) {
+        isRecording = false;
+        mediaRecorder.stop();
+        audioChunks = [];
+        document.getElementById('voiceBtn').style.background = '';
+        document.getElementById('voiceBtn').style.color = '';
+        showToast('录音已取消');
+    }
+}
+
+async function sendVoiceMessage() {
+    if (audioChunks.length === 0) return;
+
+    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        const displayContent = '[语音] ' + Math.round(blob.size / 1024) + 'KB';
+
+        // 上传语音文件
+        try {
+            const r = await fetch(`${API}/api/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: 'voice_' + Date.now() + '.webm',
+                    file_data: base64,
+                    from_user_id: currentUser.id,
+                    to_user_id: currentTarget < 0 ? 0 : currentTarget
+                })
+            });
+            const data = await r.json();
+            if (data.code === 0) {
+                const msg = {
+                    type: 'chat',
+                    to: currentTarget,
+                    content: displayContent,
+                    msg_type: 5,
+                    file_id: data.data.file_id
+                };
+                ws.send(JSON.stringify(msg));
+
+                if (!messages[currentTarget]) messages[currentTarget] = [];
+                messages[currentTarget].push({
+                    from: currentUser.id,
+                    content: displayContent,
+                    file_id: data.data.file_id,
+                    time: new Date().toISOString(),
+                    self: true
+                });
+                renderMessages(currentTarget);
+                showToast('语音发送成功');
+            }
+        } catch (e) { showToast('语音发送失败', 'error'); }
+    };
+    reader.readAsDataURL(blob);
+}
+
 function downloadFile(fileId) {
     fetch(`${API}/api/download?file_id=${fileId}`)
     .then(r => r.json())
@@ -721,9 +815,16 @@ function renderMessages(userId) {
     list.innerHTML = msgs.map(m => {
         const isImage = m.content && m.content.startsWith('[图片]');
         const isFile = m.content && m.content.startsWith('[文件]');
-        
+        const isVoice = m.content && m.content.startsWith('[语音]');
+
         let messageContent = '';
-        if (isImage && m.file_id) {
+        if (isVoice && m.file_id) {
+            messageContent = `
+                <div class="voice-message">
+                    <audio controls src="${API}/api/download?file_id=${m.file_id}" style="max-width:200px;"></audio>
+                    <span style="margin-left:8px;font-size:12px;color:var(--text3)">${m.content}</span>
+                </div>`;
+        } else if (isImage && m.file_id) {
             messageContent = `
                 <div class="image-message">
                     <img src="${API}/api/download?file_id=${m.file_id}" 
