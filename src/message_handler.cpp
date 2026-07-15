@@ -66,10 +66,10 @@ void MessageHandler::handleChatMessage(int fromUserId, int toUserId,
 
 // 处理群聊消息
 void MessageHandler::handleGroupMessage(int fromUserId, int groupId,
-                                        const std::string& content, int msgType)
+                                        const std::string& content, int msgType, int fileId)
 {
     // 1. 检查用户是否在群组中
-    std::string checkSql = "SELECT user_id FROM group_members WHERE group_id = " 
+    std::string checkSql = "SELECT user_id FROM group_members WHERE group_id = "
         + std::to_string(groupId) + " AND user_id = " + std::to_string(fromUserId);
     m_mysql->query(checkSql);
     if (m_mysql->getResult().empty()) {
@@ -77,7 +77,7 @@ void MessageHandler::handleGroupMessage(int fromUserId, int groupId,
     }
 
     // 2. 持久化到 MySQL
-    int msgId = saveMessage(fromUserId, 0, groupId, content, msgType);
+    int msgId = saveMessage(fromUserId, 0, groupId, content, msgType, fileId);
 
     // 3. 获取群组成员
     std::string memberSql = "SELECT user_id FROM group_members WHERE group_id = " 

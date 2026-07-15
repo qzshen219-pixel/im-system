@@ -34,7 +34,7 @@ public:
 
     // 处理群聊消息
     void handleGroupMessage(int fromUserId, int groupId,
-                            const std::string& content, int msgType);
+                            const std::string& content, int msgType, int fileId = 0);
 
     // 获取离线消息
     std::vector<Json::Value> getOfflineMessages(int userId);

@@ -106,7 +106,15 @@ function enterChat() {
     // 显示头像
     const avatarEl = document.getElementById('currentAvatar');
     if (currentUser.avatar_id && currentUser.avatar_id > 0) {
-        avatarEl.innerHTML = `<img src="${API}/api/download?file_id=${currentUser.avatar_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+        // 使用base64数据直接显示
+        fetch(`${API}/api/download?file_id=${currentUser.avatar_id}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.code === 0 && data.data && data.data.file_data) {
+                    avatarEl.innerHTML = `<img src="data:image/jpeg;base64,${data.data.file_data}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                }
+            })
+            .catch(() => {});
     } else {
         avatarEl.textContent = (currentUser.nickname || currentUser.username)[0];
     }
@@ -700,15 +708,46 @@ function downloadFile(fileId) {
     .catch(() => showToast('文件下载失败', 'error'));
 }
 
+function loadMessageImage(fileId) {
+    if (avatarCache['img_' + fileId]) {
+        const img = document.getElementById(`img-${fileId}`);
+        if (img) img.src = avatarCache['img_' + fileId];
+        return;
+    }
+    fetch(`${API}/api/download?file_id=${fileId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.code === 0 && data.data && data.data.file_data) {
+                const base64 = 'data:image/jpeg;base64,' + data.data.file_data;
+                avatarCache['img_' + fileId] = base64;
+                const img = document.getElementById(`img-${fileId}`);
+                if (img) img.src = base64;
+            }
+        })
+        .catch(() => {});
+}
+
 function previewImage(fileId) {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:pointer;';
     overlay.onclick = () => overlay.remove();
-    
+
     const img = document.createElement('img');
-    img.src = `${API}/api/download?file_id=${fileId}`;
     img.style.cssText = 'max-width:90%;max-height:90%;border-radius:8px;';
-    
+
+    // 使用缓存的图片数据
+    if (avatarCache['img_' + fileId]) {
+        img.src = avatarCache['img_' + fileId];
+    } else {
+        fetch(`${API}/api/download?file_id=${fileId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.code === 0 && data.data && data.data.file_data) {
+                    img.src = 'data:image/jpeg;base64,' + data.data.file_data;
+                }
+            });
+    }
+
     overlay.appendChild(img);
     document.body.appendChild(overlay);
 }
@@ -963,12 +1002,16 @@ function renderMessages(userId) {
         } else if (isImage && m.file_id) {
             messageContent = `
                 <div class="image-message">
-                    <img src="${API}/api/download?file_id=${m.file_id}" 
+                    <img src="" 
+                         id="img-${m.file_id}"
                          alt="图片" 
                          onclick="previewImage(${m.file_id})"
-                         loading="lazy">
+                         loading="lazy"
+                         style="cursor:pointer;max-width:300px;border-radius:8px;min-height:50px;background:var(--bg);">
                     <button class="btn-download" onclick="downloadFile(${m.file_id})">下载</button>
                 </div>`;
+            // 使用Promise确保DOM渲染后加载图片
+            Promise.resolve().then(() => loadMessageImage(m.file_id));
         } else if (isFile && m.file_id) {
             messageContent = `
                 <div class="file-message">
@@ -985,7 +1028,13 @@ function renderMessages(userId) {
         }
         
         const readStatus = m.self ? (m.read ? '<span class="read-status read">已读</span>' : '<span class="read-status">已发送</span>') : '';
-        const recallBtn = m.self && m.content && !m.content.startsWith('[消息已撤回]') ?
+
+        // 检查消息是否在2分钟内（可以撤回）
+        const msgTime = new Date(m.time);
+        const now = new Date();
+        const canRecall = m.self && m.content && !m.content.startsWith('[消息已撤回]') && (now - msgTime) < 120000;
+
+        const recallBtn = canRecall ?
             `<button class="btn-recall" onclick="recallMessage(${m.id})">撤回</button>` : '';
         const forwardBtn = m.content && !m.content.startsWith('[消息已撤回]') ?
             `<button class="btn-recall" onclick="forwardMessage(${m.id})">转发</button>` : '';
@@ -1003,12 +1052,9 @@ function renderMessages(userId) {
             </div>
         </div>`;
     }).join('');
-
-    // 只有在加载新消息时才滚动到底部，加载历史消息时保持位置
-    if (!messageLoading[userId]) {
-        list.scrollTop = list.scrollHeight;
-    }
 }
+
+let avatarCache = {};
 
 function renderFriends(friends) {
     const list = document.getElementById('friend-items');
@@ -1018,12 +1064,47 @@ function renderFriends(friends) {
     }
     list.innerHTML = friends.map(f => `
         <div class="contact-item">
-            <div class="avatar" style="background: ${getAvatarColor(f.id)}">${(f.nickname || f.username)[0]}</div>
+            <div class="avatar" style="background: ${getAvatarColor(f.id)}" id="avatar-friend-${f.id}">${(f.nickname || f.username)[0]}</div>
             <span class="name" onclick="startChat(${f.id}, '${f.nickname || f.username}')">${f.nickname || f.username}</span>
             <div class="status ${f.online ? 'online' : ''}"></div>
             <button class="btn-recall" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除">✕</button>
         </div>
     `).join('');
+
+    // 异步加载头像
+    friends.forEach(f => {
+        if (f.avatar_id && f.avatar_id > 0) {
+            loadFriendAvatar(f.id, f.avatar_id);
+        }
+    });
+}
+
+function loadFriendAvatar(userId, avatarId) {
+    if (avatarCache[avatarId]) {
+        applyAvatar(userId, avatarCache[avatarId]);
+        return;
+    }
+    fetch(`${API}/api/download?file_id=${avatarId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.code === 0 && data.data && data.data.file_data) {
+                avatarCache[avatarId] = data.data.file_data;
+                applyAvatar(userId, data.data.file_data);
+            }
+        })
+        .catch(() => {});
+}
+
+function applyAvatar(userId, base64Data) {
+    const avatarEl = document.getElementById(`avatar-friend-${userId}`);
+    if (avatarEl) {
+        avatarEl.innerHTML = `<img src="data:image/jpeg;base64,${base64Data}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    }
+}
+
+function getAvatarBase64(avatarId) {
+    // 返回一个占位符，实际图片异步加载
+    return '';
 }
 
 function renderGroups() {
@@ -1314,6 +1395,14 @@ async function loadMessageHistory(userId, loadMore = false) {
 
             messageOffset[userId] = offset + 50;
             renderMessages(userId);
+
+            // 首次加载时滚动到底部显示最新消息
+            if (!loadMore) {
+                setTimeout(() => {
+                    const list = document.getElementById('msg-list');
+                    if (list) list.scrollTop = list.scrollHeight;
+                }, 50);
+            }
         }
     } catch (e) {
         console.error('加载历史消息失败:', e);
@@ -1336,7 +1425,25 @@ async function markAsRead(fromUserId) {
 
 function startGroupChat(groupId, groupName) {
     currentTarget = -groupId;
-    document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span> <button class="btn-recall" onclick="showGroupMembers(${groupId})" style="margin-left:8px;font-size:11px">成员</button>`;
+
+    // 获取群公告
+    const groupData = groups[groupId];
+    const announcement = groupData ? groupData.announcement : '';
+    const isOwner = groupData && groupData.owner_id === currentUser.id;
+
+    let headerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span>`;
+    headerHTML += ` <button class="btn-recall" onclick="showGroupMembers(${groupId})" style="margin-left:8px;font-size:11px">成员</button>`;
+    if (isOwner) {
+        headerHTML += ` <button class="btn-recall" onclick="editAnnouncement(${groupId})" style="font-size:11px">公告</button>`;
+    }
+
+    document.getElementById('chat-target').innerHTML = headerHTML;
+
+    // 显示群公告
+    if (announcement) {
+        document.getElementById('chat-target').innerHTML += `<div style="font-size:11px;color:var(--text3);margin-top:4px;padding:4px 8px;background:var(--bg);border-radius:4px;">📢 ${announcement}</div>`;
+    }
+
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
 
@@ -1355,6 +1462,53 @@ function startGroupChat(groupId, groupName) {
 
     // 从服务器加载群组历史消息
     loadGroupMessages(groupId);
+}
+
+function editAnnouncement(groupId) {
+    const groupData = groups[groupId];
+    const currentAnnouncement = groupData ? groupData.announcement || '' : '';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog-overlay';
+    dialog.innerHTML = `
+        <div class="dialog" style="max-width:400px">
+            <h3>设置群公告</h3>
+            <div class="form-group">
+                <textarea id="announcement-text" rows="3" placeholder="输入群公告内容">${currentAnnouncement}</textarea>
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+                <button class="dialog-confirm" onclick="saveAnnouncement(${groupId})">保存</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+}
+
+async function saveAnnouncement(groupId) {
+    const announcement = document.getElementById('announcement-text').value.trim();
+
+    try {
+        const r = await fetch(`${API}/api/group/announcement`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: currentUser.id, announcement: announcement })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            // 更新本地群组数据
+            if (groups[groupId]) {
+                groups[groupId].announcement = announcement;
+            }
+            showToast('群公告已更新');
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            // 刷新群聊界面
+            startGroupChat(groupId, groups[groupId] ? groups[groupId].name : '群组');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
 }
 
 async function showGroupMembers(groupId) {
@@ -1536,11 +1690,18 @@ async function loadGroupMessages(groupId) {
                 id: m.id,
                 from: m.from,
                 content: m.content,
+                file_id: m.file_id || null,
                 time: m.time,
                 self: m.from === currentUser.id,
                 from_name: m.from_name
             }));
             renderMessages(groupId);
+
+            // 滚动到底部显示最新消息
+            setTimeout(() => {
+                const list = document.getElementById('msg-list');
+                if (list) list.scrollTop = list.scrollHeight;
+            }, 50);
         }
     } catch (e) {
         console.error('加载群组消息失败:', e);
@@ -1850,13 +2011,13 @@ async function uploadAvatar(event) {
                 // 更新对话框中的头像预览
                 const dialogAvatar = document.querySelector('.dialog-overlay .avatar');
                 if (dialogAvatar) {
-                    dialogAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                    dialogAvatar.innerHTML = `<img src="data:image/jpeg;base64,${base64}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 }
 
                 // 更新左上角头像
                 const currentAvatar = document.getElementById('currentAvatar');
                 if (currentAvatar) {
-                    currentAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                    currentAvatar.innerHTML = `<img src="data:image/jpeg;base64,${base64}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 }
 
                 showToast('头像已更新');

@@ -207,6 +207,9 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/group/transfer" && methodStr == "POST") {
         response = server->handleGroupTransfer(*body);
     }
+    else if (urlStr == "/api/group/announcement" && methodStr == "POST") {
+        response = server->handleGroupAnnouncement(*body);
+    }
     else if (urlStr == "/api/group/messages" && methodStr == "GET") {
         const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
@@ -296,7 +299,7 @@ std::string HttpServer::handleFriends(int userId)
     result["data"] = Json::arrayValue;
 
     // 查询好友关系表中 status='accepted' 的好友
-    std::string sql = "SELECT DISTINCT u.id, u.username, u.nickname FROM friends f "
+    std::string sql = "SELECT DISTINCT u.id, u.username, u.nickname, u.avatar_id FROM friends f "
         "JOIN users u ON (f.friend_id = u.id OR f.user_id = u.id) "
         "WHERE f.status = 'accepted' AND (f.user_id = " + std::to_string(userId) + " OR f.friend_id = " + std::to_string(userId) + ") "
         "AND u.id != " + std::to_string(userId);
@@ -308,6 +311,7 @@ std::string HttpServer::handleFriends(int userId)
         user["id"] = std::stoi(row[0]);
         user["username"] = row[1];
         user["nickname"] = row[2];
+        user["avatar_id"] = std::stoi(row[3]);
         user["online"] = m_userManager->isOnline(std::stoi(row[0]));
         result["data"].append(user);
     }
@@ -523,33 +527,44 @@ std::string HttpServer::handleMessageRecall(const std::string& body)
     if (!reader.parse(body, root)) {
         return "{\"code\":1,\"message\":\"Invalid JSON\"}";
     }
-    
+
     int messageId = root["message_id"].asInt();
     int userId = root["user_id"].asInt();
-    
+
     if (messageId <= 0 || userId <= 0) {
         return "{\"code\":1,\"message\":\"Invalid parameters\"}";
     }
-    
-    // 验证消息是否属于该用户
-    std::string checkSql = "SELECT from_user_id FROM messages WHERE id=" + std::to_string(messageId);
+
+    // 验证消息是否属于该用户，并检查时间
+    std::string checkSql = "SELECT from_user_id, created_at FROM messages WHERE id=" + std::to_string(messageId);
     m_mysql->query(checkSql);
     auto rows = m_mysql->getResult();
-    
+
     if (rows.empty()) {
-        return "{\"code\":1,\"message\":\"Message not found\"}";
+        return "{\"code\":1,\"message\":\"消息不存在\"}";
     }
-    
+
     int fromUserId = std::stoi(rows[0][0]);
     if (fromUserId != userId) {
-        return "{\"code\":1,\"message\":\"Cannot recall others message\"}";
+        return "{\"code\":1,\"message\":\"只能撤回自己的消息\"}";
     }
-    
-    // 更新消息内容为已撤回
-    std::string sql = "UPDATE messages SET content='[消息已撤回]', msg_type=4 WHERE id=" + std::to_string(messageId);
+
+    // 检查消息时间是否在2分钟内
+    std::string createTime = rows[0][1];
+    std::string sql = "SELECT TIMESTAMPDIFF(SECOND, '" + createTime + "', NOW())";
     m_mysql->query(sql);
-    
-    return "{\"code\":0,\"message\":\"Message recalled\"}";
+    auto timeRows = m_mysql->getResult();
+    int secondsDiff = std::stoi(timeRows[0][0]);
+
+    if (secondsDiff > 120) {
+        return "{\"code\":1,\"message\":\"消息发送超过2分钟，无法撤回\"}";
+    }
+
+    // 更新消息内容为已撤回
+    std::string updateSql = "UPDATE messages SET content='[消息已撤回]', msg_type=4 WHERE id=" + std::to_string(messageId);
+    m_mysql->query(updateSql);
+
+    return "{\"code\":0,\"message\":\"消息已撤回\"}";
 }
 
 std::string HttpServer::handleMessageForward(const std::string& body)
@@ -886,7 +901,7 @@ std::string HttpServer::handleGroupList(int userId)
         return Json::FastWriter().write(result);
     }
 
-    std::string sql = "SELECT g.id, g.name, g.owner_id FROM groups_table g "
+    std::string sql = "SELECT g.id, g.name, g.owner_id, g.announcement FROM groups_table g "
         "JOIN group_members gm ON g.id = gm.group_id "
         "WHERE gm.user_id = " + std::to_string(userId);
     m_mysql->query(sql);
@@ -897,6 +912,7 @@ std::string HttpServer::handleGroupList(int userId)
         group["id"] = std::stoi(row[0]);
         group["name"] = row[1];
         group["owner_id"] = std::stoi(row[2]);
+        group["announcement"] = row[3];
         result["data"].append(group);
     }
 
@@ -1118,6 +1134,38 @@ std::string HttpServer::handleGroupTransfer(const std::string& body)
     return "{\"code\":0,\"message\":\"群组已转让\"}";
 }
 
+std::string HttpServer::handleGroupAnnouncement(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+    std::string announcement = root["announcement"].asString();
+
+    if (groupId <= 0 || userId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查操作者是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以发布公告\"}";
+    }
+
+    // 更新群公告
+    std::string sql = "UPDATE groups_table SET announcement='" + announcement + "' WHERE id=" + std::to_string(groupId);
+    m_mysql->query(sql);
+
+    return "{\"code\":0,\"message\":\"群公告已更新\"}";
+}
+
 std::string HttpServer::handleGroupMessages(int groupId)
 {
     Json::Value result;
@@ -1129,7 +1177,7 @@ std::string HttpServer::handleGroupMessages(int groupId)
     }
 
     // 群组消息存储在 messages 表中，使用 group_id 字段
-    std::string sql = "SELECT m.id, m.from_user_id, m.content, m.msg_type, m.created_at, u.username, u.nickname "
+    std::string sql = "SELECT m.id, m.from_user_id, m.content, m.msg_type, m.created_at, u.username, u.nickname, m.file_id "
         "FROM messages m JOIN users u ON m.from_user_id = u.id "
         "WHERE m.group_id = " + std::to_string(groupId) + " "
         "ORDER BY m.created_at ASC LIMIT 200";
@@ -1144,6 +1192,10 @@ std::string HttpServer::handleGroupMessages(int groupId)
         msg["msg_type"] = std::stoi(row[3]);
         msg["time"] = row[4];
         msg["from_name"] = row[6].empty() ? row[5] : row[6];
+        int fileId = std::stoi(row[7]);
+        if (fileId > 0) {
+            msg["file_id"] = fileId;
+        }
         result["data"].append(msg);
     }
 
