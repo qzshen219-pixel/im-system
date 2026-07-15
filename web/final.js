@@ -278,7 +278,7 @@ function receiveGroupMessage(data) {
     const content = data.content;
     const time = data.time || new Date().toLocaleTimeString();
 
-    // 忽略自己发送的消息（已经在 sendGroupMessage 中添加）
+    // 忽略自己发送的消息
     if (data.from === currentUser.id) return;
 
     if (!messages[groupId]) messages[groupId] = [];
@@ -291,11 +291,24 @@ function receiveGroupMessage(data) {
         self: false
     });
 
+    // 添加到会话列表
+    const groupName = groups[groupId] ? groups[groupId].name : '群组' + groupId;
+    conversations['group_' + groupId] = {
+        id: 'group_' + groupId,
+        groupId: groupId,
+        name: groupName,
+        lastMsg: content,
+        time: time,
+        isGroup: true
+    };
+
     if (currentTarget === -groupId) {
         renderMessages(groupId);
     } else {
+        addUnreadCount('group_' + groupId);
         showToast(`收到来自群组的新消息`);
     }
+    renderConversations();
 }
 
 // ==================== 发送消息 ====================
@@ -345,10 +358,10 @@ function sendGroupMessage() {
     const input = document.getElementById('msg-input');
     const content = input.value.trim();
     if (!content || !currentTarget || currentTarget >= 0) return;
-    
+
     const groupId = -currentTarget;
     ws.send(JSON.stringify({ type: 'group_chat', group_id: groupId, content: content }));
-    
+
     if (!messages[groupId]) messages[groupId] = [];
     messages[groupId].push({
         from: currentUser.id,
@@ -357,8 +370,20 @@ function sendGroupMessage() {
         self: true,
         from_name: currentUser.nickname || currentUser.username
     });
-    
+
+    // 添加到会话列表
+    const groupName = groups[groupId] ? groups[groupId].name : '群组' + groupId;
+    conversations['group_' + groupId] = {
+        id: 'group_' + groupId,
+        groupId: groupId,
+        name: groupName,
+        lastMsg: content,
+        time: new Date().toISOString(),
+        isGroup: true
+    };
+
     renderMessages(groupId);
+    renderConversations();
     input.value = '';
     input.focus();
 }
@@ -663,11 +688,15 @@ function renderConversations() {
 
     list.innerHTML = convArray.map(c => {
         const unread = unreadCounts[c.id] || 0;
+        const isGroup = c.isGroup;
+        const clickAction = isGroup
+            ? `startGroupChat(${c.groupId}, '${c.name}')`
+            : `startChat(${c.id}, '${c.name}')`;
         return `
-        <div class="conversation-item ${currentTarget === c.id ? 'active' : ''}"
+        <div class="conversation-item ${currentTarget === (isGroup ? -c.groupId : c.id) ? 'active' : ''}"
              data-user-id="${c.id}"
-             onclick="startChat(${c.id}, '${c.name}')">
-            <div class="avatar" style="background: ${getAvatarColor(c.id)}">${c.name[0]}</div>
+             onclick="${clickAction}">
+            <div class="avatar" style="background: ${isGroup ? 'linear-gradient(135deg, #52c41a, #73d13d)' : getAvatarColor(c.id)}">${c.name[0]}</div>
             <div class="info">
                 <div class="name">${c.name}</div>
                 <div class="last-msg">${c.lastMsg}</div>
@@ -1054,6 +1083,19 @@ function startGroupChat(groupId, groupName) {
     document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span> <button class="btn-recall" onclick="showGroupMembers(${groupId})" style="margin-left:8px;font-size:11px">成员</button>`;
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
+
+    // 添加到会话列表
+    if (!conversations['group_' + groupId]) {
+        conversations['group_' + groupId] = {
+            id: 'group_' + groupId,
+            groupId: groupId,
+            name: groupName,
+            lastMsg: '',
+            time: new Date().toISOString(),
+            isGroup: true
+        };
+    }
+    renderConversations();
 
     // 从服务器加载群组历史消息
     loadGroupMessages(groupId);
