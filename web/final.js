@@ -682,6 +682,59 @@ async function sendVideoMessage() {
     reader.readAsDataURL(blob);
 }
 
+function previewFile(fileId, filename) {
+    // 获取文件扩展名
+    const ext = filename.split('.').pop().toLowerCase();
+
+    // 支持预览的文件类型
+    const previewableTypes = ['pdf', 'txt', 'md', 'html', 'htm', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'];
+
+    if (!previewableTypes.includes(ext)) {
+        showToast('此文件类型不支持预览，请下载查看', 'error');
+        return;
+    }
+
+    // 获取文件数据
+    fetch(`${API}/api/download?file_id=${fileId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.code === 0 && data.data && data.data.file_data) {
+                const base64 = data.data.file_data;
+                const overlay = document.createElement('div');
+                overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;';
+
+                let content = '';
+
+                if (ext === 'pdf') {
+                    content = `<iframe src="data:application/pdf;base64,${base64}" style="width:80%;height:80%;border:none;border-radius:8px;"></iframe>`;
+                } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext)) {
+                    content = `<img src="data:image/${ext};base64,${base64}" style="max-width:90%;max-height:80%;border-radius:8px;">`;
+                } else if (['txt', 'md'].includes(ext)) {
+                    const text = atob(base64);
+                    content = `<pre style="background:var(--bg);color:var(--text);padding:20px;border-radius:8px;max-width:80%;max-height:80%;overflow:auto;white-space:pre-wrap;">${text}</pre>`;
+                } else if (['html', 'htm'].includes(ext)) {
+                    content = `<iframe src="data:text/html;base64,${base64}" style="width:80%;height:80%;border:none;border-radius:8px;background:white;"></iframe>`;
+                }
+
+                overlay.innerHTML = `
+                    <div style="position:absolute;top:20px;right:20px;display:flex;gap:10px;">
+                        <button onclick="downloadFile(${fileId})" style="padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:4px;cursor:pointer;">下载</button>
+                        <button onclick="this.closest('div[style]').parentElement.remove()" style="padding:8px 16px;background:#666;color:white;border:none;border-radius:4px;cursor:pointer;">关闭</button>
+                    </div>
+                    <div style="font-size:14px;color:white;margin-bottom:10px;">${filename}</div>
+                    ${content}
+                `;
+
+                overlay.addEventListener('click', e => {
+                    if (e.target === overlay) overlay.remove();
+                });
+
+                document.body.appendChild(overlay);
+            }
+        })
+        .catch(() => showToast('文件预览失败', 'error'));
+}
+
 function downloadFile(fileId) {
     fetch(`${API}/api/download?file_id=${fileId}`)
     .then(r => r.json())
@@ -1013,13 +1066,15 @@ function renderMessages(userId) {
             // 使用Promise确保DOM渲染后加载图片
             Promise.resolve().then(() => loadMessageImage(m.file_id));
         } else if (isFile && m.file_id) {
+            const fileName = m.content.replace('[文件] ', '').split('(')[0];
             messageContent = `
                 <div class="file-message">
                     <div class="file-icon">📄</div>
                     <div class="file-info">
-                        <div class="file-name">${m.content.replace('[文件] ', '').split('(')[0]}</div>
+                        <div class="file-name">${fileName}</div>
                         <div class="file-size">${m.content.match(/\(([^)]+)\)/)?.[1] || ''}</div>
                     </div>
+                    <button class="btn-download" onclick="previewFile(${m.file_id}, '${fileName}')">预览</button>
                     <button class="btn-download" onclick="downloadFile(${m.file_id})">下载</button>
                     <button class="btn-recall" onclick="moveFileToFolder(${m.file_id})" title="移动到文件夹">📁</button>
                 </div>`;
