@@ -102,7 +102,15 @@ function handleLogout() {
 function enterChat() {
     console.log('enterChat called, currentUser:', currentUser);
     document.getElementById('current-user').textContent = currentUser.nickname || currentUser.username;
-    document.getElementById('currentAvatar').textContent = (currentUser.nickname || currentUser.username)[0];
+
+    // 显示头像
+    const avatarEl = document.getElementById('currentAvatar');
+    if (currentUser.avatar_id && currentUser.avatar_id > 0) {
+        avatarEl.innerHTML = `<img src="${API}/api/download?file_id=${currentUser.avatar_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    } else {
+        avatarEl.textContent = (currentUser.nickname || currentUser.username)[0];
+    }
+
     document.getElementById('userIdDisplay').textContent = 'ID: ' + currentUser.id;
     showPage('page-chat');
     connectWebSocket();
@@ -1843,6 +1851,12 @@ async function uploadAvatar(event) {
                 const dialogAvatar = document.querySelector('.dialog-overlay .avatar');
                 if (dialogAvatar) {
                     dialogAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                }
+
+                // 更新左上角头像
+                const currentAvatar = document.getElementById('currentAvatar');
+                if (currentAvatar) {
+                    currentAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 }
 
                 showToast('头像已更新');
