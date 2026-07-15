@@ -467,10 +467,18 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
         return Json::FastWriter().write(result);
     }
 
+    int limit = 50;
+    int offset = 0;
+    const char *limitStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "limit");
+    const char *offsetStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "offset");
+    if (limitStr) limit = std::atoi(limitStr);
+    if (offsetStr) offset = std::atoi(offsetStr);
+    if (limit > 100) limit = 100;
+
     std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at, file_id, status FROM messages "
         "WHERE (from_user_id=" + std::to_string(userId) + " AND to_user_id=" + std::to_string(targetId) + ") "
         "OR (from_user_id=" + std::to_string(targetId) + " AND to_user_id=" + std::to_string(userId) + ") "
-        "ORDER BY created_at ASC LIMIT 100";
+        "ORDER BY created_at DESC LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
     m_mysql->query(sql);
     auto rows = m_mysql->getResult();

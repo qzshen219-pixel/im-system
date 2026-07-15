@@ -712,12 +712,12 @@ function renderConversations() {
 function renderMessages(userId) {
     const list = document.getElementById('msg-list');
     const msgs = messages[userId] || [];
-    
+
     if (msgs.length === 0) {
         list.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>暂无消息</p></div>';
         return;
     }
-    
+
     list.innerHTML = msgs.map(m => {
         const isImage = m.content && m.content.startsWith('[图片]');
         const isFile = m.content && m.content.startsWith('[文件]');
@@ -1041,12 +1041,21 @@ function startChat(userId, userName) {
     loadMessageHistory(userId);
 }
 
-async function loadMessageHistory(userId) {
+let messageOffset = {};
+let messageLoading = {};
+
+async function loadMessageHistory(userId, loadMore = false) {
+    if (messageLoading[userId]) return;
+    messageLoading[userId] = true;
+
     try {
-        const r = await fetch(`${API}/api/messages/history?user_id=${currentUser.id}&target_id=${userId}`);
+        if (!loadMore) messageOffset[userId] = 0;
+        const offset = messageOffset[userId] || 0;
+
+        const r = await fetch(`${API}/api/messages/history?user_id=${currentUser.id}&target_id=${userId}&limit=50&offset=${offset}`);
         const data = await r.json();
         if (data.code === 0) {
-            messages[userId] = data.data.map(m => ({
+            const newMessages = data.data.map(m => ({
                 id: m.id,
                 from: m.from,
                 content: m.content,
@@ -1055,16 +1064,23 @@ async function loadMessageHistory(userId) {
                 time: m.time,
                 self: m.from === currentUser.id,
                 from_name: m.from_name
-            }));
-            renderMessages(userId);
+            })).reverse();
 
-            // 发送已读回执
-            markAsRead(userId);
+            if (loadMore && messages[userId]) {
+                messages[userId] = [...newMessages, ...messages[userId]];
+            } else {
+                messages[userId] = newMessages;
+            }
+
+            messageOffset[userId] = offset + 50;
+            renderMessages(userId);
         }
     } catch (e) {
         console.error('加载历史消息失败:', e);
         if (!messages[userId]) messages[userId] = [];
         renderMessages(userId);
+    } finally {
+        messageLoading[userId] = false;
     }
 }
 
@@ -1511,6 +1527,21 @@ document.addEventListener('keydown', e => {
     }
     if (e.ctrlKey && e.key === 'k') { e.preventDefault(); document.getElementById('searchInput')?.focus(); }
     if (e.ctrlKey && e.key === '/') { e.preventDefault(); document.getElementById('msg-input')?.focus(); }
+});
+
+// 滚动加载更多消息
+document.addEventListener('DOMContentLoaded', () => {
+    const msgList = document.getElementById('msg-list');
+    if (msgList) {
+        msgList.addEventListener('scroll', () => {
+            if (msgList.scrollTop < 50 && currentTarget && !messageLoading[Math.abs(currentTarget)]) {
+                const userId = currentTarget < 0 ? null : currentTarget;
+                if (userId && messages[userId] && messages[userId].length > 0) {
+                    loadMessageHistory(userId, true);
+                }
+            }
+        });
+    }
 });
 
 // 输入事件 - 发送正在输入状态
