@@ -129,9 +129,13 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/messages/history" && methodStr == "GET") {
         const char *userIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "user_id");
         const char *targetIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "target_id");
+        const char *limitStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "limit");
+        const char *offsetStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "offset");
         int userId = userIdStr ? std::stoi(userIdStr) : 0;
         int targetId = targetIdStr ? std::stoi(targetIdStr) : 0;
-        response = server->handleMessageHistory(userId, targetId);
+        int limit = limitStr ? std::atoi(limitStr) : 50;
+        int offset = offsetStr ? std::atoi(offsetStr) : 0;
+        response = server->handleMessageHistory(userId, targetId, limit, offset);
     }
     else if (urlStr == "/api/message/recall" && methodStr == "POST") {
         response = server->handleMessageRecall(*body);
@@ -141,6 +145,9 @@ MHD_Result HttpServer::requestHandler(void *cls,
     }
     else if (urlStr == "/api/message/reply" && methodStr == "POST") {
         response = server->handleMessageReply(*body);
+    }
+    else if (urlStr == "/api/message/read" && methodStr == "POST") {
+        response = server->handleMessageRead(*body);
     }
     else if (urlStr == "/api/user/profile" && methodStr == "GET") {
         const char *userIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "user_id");
@@ -187,6 +194,23 @@ MHD_Result HttpServer::requestHandler(void *cls,
         const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
         response = server->handleGroupMembers(groupId);
+    }
+    else if (urlStr == "/api/group/remove" && methodStr == "POST") {
+        response = server->handleGroupRemove(*body);
+    }
+    else if (urlStr == "/api/group/dissolve" && methodStr == "POST") {
+        response = server->handleGroupDissolve(*body);
+    }
+    else if (urlStr == "/api/group/leave" && methodStr == "POST") {
+        response = server->handleGroupLeave(*body);
+    }
+    else if (urlStr == "/api/group/transfer" && methodStr == "POST") {
+        response = server->handleGroupTransfer(*body);
+    }
+    else if (urlStr == "/api/group/messages" && methodStr == "GET") {
+        const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
+        int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
+        response = server->handleGroupMessages(groupId);
     }
     else {
         status = MHD_HTTP_NOT_FOUND;
@@ -446,7 +470,7 @@ std::string HttpServer::handleFriendPending(int userId)
     return Json::FastWriter().write(result);
 }
 
-std::string HttpServer::handleMessageHistory(int userId, int targetId)
+std::string HttpServer::handleMessageHistory(int userId, int targetId, int limit, int offset)
 {
     Json::Value result;
     result["code"] = 0;
@@ -456,10 +480,14 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
         return Json::FastWriter().write(result);
     }
 
-    std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at, file_id FROM messages "
+    if (limit <= 0) limit = 50;
+    if (limit > 100) limit = 100;
+    if (offset < 0) offset = 0;
+
+    std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at, file_id, status FROM messages "
         "WHERE (from_user_id=" + std::to_string(userId) + " AND to_user_id=" + std::to_string(targetId) + ") "
         "OR (from_user_id=" + std::to_string(targetId) + " AND to_user_id=" + std::to_string(userId) + ") "
-        "ORDER BY created_at ASC LIMIT 100";
+        "ORDER BY created_at DESC LIMIT " + std::to_string(limit) + " OFFSET " + std::to_string(offset);
 
     m_mysql->query(sql);
     auto rows = m_mysql->getResult();
@@ -476,6 +504,7 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
         if (fileId > 0) {
             msg["file_id"] = fileId;
         }
+        msg["status"] = std::stoi(row[7]);
 
         std::string fromName;
         m_userManager->getUserInfo(msg["from"].asInt(), fromName, fromName);
@@ -608,16 +637,39 @@ std::string HttpServer::handleMessageReply(const std::string& body)
     return Json::FastWriter().write(result);
 }
 
+std::string HttpServer::handleMessageRead(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int userId = root["user_id"].asInt();
+    int fromUserId = root["from_user_id"].asInt();
+
+    if (userId <= 0 || fromUserId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 标记该用户收到的来自 fromUserId 的所有消息为已读
+    std::string sql = "UPDATE messages SET status=1 WHERE from_user_id=" + std::to_string(fromUserId)
+        + " AND to_user_id=" + std::to_string(userId) + " AND status=0";
+    m_mysql->query(sql);
+
+    return "{\"code\":0,\"message\":\"Messages marked as read\"}";
+}
+
 std::string HttpServer::handleUserProfile(int userId)
 {
     Json::Value result;
     result["code"] = 0;
     result["data"] = Json::objectValue;
-    
-    std::string sql = "SELECT id, username, nickname, email, phone, created_at FROM users WHERE id=" + std::to_string(userId);
+
+    std::string sql = "SELECT id, username, nickname, email, phone, created_at, avatar_id FROM users WHERE id=" + std::to_string(userId);
     m_mysql->query(sql);
     auto rows = m_mysql->getResult();
-    
+
     if (rows.empty()) {
         result["code"] = 1;
         result["message"] = "User not found";
@@ -628,8 +680,9 @@ std::string HttpServer::handleUserProfile(int userId)
         result["data"]["email"] = rows[0][3];
         result["data"]["phone"] = rows[0][4];
         result["data"]["created_at"] = rows[0][5];
+        result["data"]["avatar_id"] = std::stoi(rows[0][6]);
     }
-    
+
     return Json::FastWriter().write(result);
 }
 
@@ -657,6 +710,9 @@ std::string HttpServer::handleUserUpdate(const std::string& body)
     }
     if (root.isMember("phone")) {
         updates.push_back("phone='" + root["phone"].asString() + "'");
+    }
+    if (root.isMember("avatar_id")) {
+        updates.push_back("avatar_id=" + std::to_string(root["avatar_id"].asInt()));
     }
     
     if (updates.empty()) {
@@ -910,6 +966,185 @@ std::string HttpServer::handleGroupMembers(int groupId)
         member["role"] = std::stoi(row[3]);
         member["online"] = m_userManager->isOnline(std::stoi(row[0]));
         result["data"].append(member);
+    }
+
+    return Json::FastWriter().write(result);
+}
+
+std::string HttpServer::handleGroupRemove(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+    int operatorId = root["operator_id"].asInt();
+
+    if (groupId <= 0 || userId <= 0 || operatorId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查操作者是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(operatorId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以删除成员\"}";
+    }
+
+    // 不能删除自己
+    if (userId == operatorId) {
+        return "{\"code\":1,\"message\":\"不能删除自己\"}";
+    }
+
+    // 删除成员
+    std::string sql = "DELETE FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(sql);
+
+    return "{\"code\":0,\"message\":\"成员已删除\"}";
+}
+
+std::string HttpServer::handleGroupDissolve(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+
+    if (groupId <= 0 || userId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以解散群组\"}";
+    }
+
+    // 删除所有成员
+    m_mysql->query("DELETE FROM group_members WHERE group_id=" + std::to_string(groupId));
+    // 删除群组
+    m_mysql->query("DELETE FROM groups_table WHERE id=" + std::to_string(groupId));
+
+    return "{\"code\":0,\"message\":\"群组已解散\"}";
+}
+
+std::string HttpServer::handleGroupLeave(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+
+    if (groupId <= 0 || userId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查是否是群主（群主不能退出）
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty()) {
+        return "{\"code\":1,\"message\":\"你不是群组成员\"}";
+    }
+    if (std::stoi(checkRows[0][0]) == 1) {
+        return "{\"code\":1,\"message\":\"群主不能退出群组，请先解散或转让群组\"}";
+    }
+
+    // 删除成员
+    m_mysql->query("DELETE FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId));
+
+    return "{\"code\":0,\"message\":\"已退出群组\"}";
+}
+
+std::string HttpServer::handleGroupTransfer(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int fromUserId = root["from_user_id"].asInt();
+    int toUserId = root["to_user_id"].asInt();
+
+    if (groupId <= 0 || fromUserId <= 0 || toUserId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查操作者是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(fromUserId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以转让群组\"}";
+    }
+
+    // 检查目标用户是否是群成员
+    std::string memberCheckSql = "SELECT user_id FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(toUserId);
+    m_mysql->query(memberCheckSql);
+    auto memberRows = m_mysql->getResult();
+    if (memberRows.empty()) {
+        return "{\"code\":1,\"message\":\"目标用户不是群组成员\"}";
+    }
+
+    // 转让群组
+    m_mysql->query("UPDATE group_members SET role=0 WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(fromUserId));
+    m_mysql->query("UPDATE group_members SET role=1 WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(toUserId));
+
+    return "{\"code\":0,\"message\":\"群组已转让\"}";
+}
+
+std::string HttpServer::handleGroupMessages(int groupId)
+{
+    Json::Value result;
+    result["code"] = 0;
+    result["data"] = Json::arrayValue;
+
+    if (groupId <= 0) {
+        return Json::FastWriter().write(result);
+    }
+
+    // 群组消息存储在 messages 表中，使用 group_id 字段
+    std::string sql = "SELECT m.id, m.from_user_id, m.content, m.msg_type, m.created_at, u.username, u.nickname "
+        "FROM messages m JOIN users u ON m.from_user_id = u.id "
+        "WHERE m.group_id = " + std::to_string(groupId) + " "
+        "ORDER BY m.created_at ASC LIMIT 200";
+    m_mysql->query(sql);
+    auto rows = m_mysql->getResult();
+
+    for (auto& row : rows) {
+        Json::Value msg;
+        msg["id"] = std::stoi(row[0]);
+        msg["from"] = std::stoi(row[1]);
+        msg["content"] = row[2];
+        msg["msg_type"] = std::stoi(row[3]);
+        msg["time"] = row[4];
+        msg["from_name"] = row[6].empty() ? row[5] : row[6];
+        result["data"].append(msg);
     }
 
     return Json::FastWriter().write(result);

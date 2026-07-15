@@ -1,4 +1,4 @@
-const API = 'http://172.22.120.246:8080';
+const API = window.location.protocol + '//' + window.location.hostname + ':8080';
 let currentUser = null;
 let ws = null;
 let currentTarget = null;
@@ -102,7 +102,15 @@ function handleLogout() {
 function enterChat() {
     console.log('enterChat called, currentUser:', currentUser);
     document.getElementById('current-user').textContent = currentUser.nickname || currentUser.username;
-    document.getElementById('currentAvatar').textContent = (currentUser.nickname || currentUser.username)[0];
+
+    // 显示头像
+    const avatarEl = document.getElementById('currentAvatar');
+    if (currentUser.avatar_id && currentUser.avatar_id > 0) {
+        avatarEl.innerHTML = `<img src="${API}/api/download?file_id=${currentUser.avatar_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    } else {
+        avatarEl.textContent = (currentUser.nickname || currentUser.username)[0];
+    }
+
     document.getElementById('userIdDisplay').textContent = 'ID: ' + currentUser.id;
     showPage('page-chat');
     connectWebSocket();
@@ -121,7 +129,7 @@ const BASE_DELAY = 1000;
 function connectWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) return;
     
-    const wsUrl = `ws://172.22.120.246:8001`;
+    const wsUrl = `ws://${window.location.hostname}:8001`;
     ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
@@ -277,7 +285,10 @@ function receiveGroupMessage(data) {
     const groupId = data.group_id;
     const content = data.content;
     const time = data.time || new Date().toLocaleTimeString();
-    
+
+    // 忽略自己发送的消息
+    if (data.from === currentUser.id) return;
+
     if (!messages[groupId]) messages[groupId] = [];
     messages[groupId].push({
         from: data.from,
@@ -287,12 +298,25 @@ function receiveGroupMessage(data) {
         time: time,
         self: false
     });
-    
+
+    // 添加到会话列表
+    const groupName = groups[groupId] ? groups[groupId].name : '群组' + groupId;
+    conversations['group_' + groupId] = {
+        id: 'group_' + groupId,
+        groupId: groupId,
+        name: groupName,
+        lastMsg: content,
+        time: time,
+        isGroup: true
+    };
+
     if (currentTarget === -groupId) {
         renderMessages(groupId);
     } else {
+        addUnreadCount('group_' + groupId);
         showToast(`收到来自群组的新消息`);
     }
+    renderConversations();
 }
 
 // ==================== 发送消息 ====================
@@ -315,21 +339,21 @@ function sendMessage() {
     messages[currentTarget].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true
     });
-    
+
     if (!conversations[currentTarget]) {
         conversations[currentTarget] = {
             id: currentTarget,
             name: '用户' + currentTarget,
             lastMsg: content,
-            time: formatTime(new Date()),
+            time: new Date().toISOString(),
             unread: 0
         };
     } else {
         conversations[currentTarget].lastMsg = content;
-        conversations[currentTarget].time = formatTime(new Date());
+        conversations[currentTarget].time = new Date().toISOString();
     }
     
     renderMessages(currentTarget);
@@ -342,20 +366,32 @@ function sendGroupMessage() {
     const input = document.getElementById('msg-input');
     const content = input.value.trim();
     if (!content || !currentTarget || currentTarget >= 0) return;
-    
+
     const groupId = -currentTarget;
     ws.send(JSON.stringify({ type: 'group_chat', group_id: groupId, content: content }));
-    
+
     if (!messages[groupId]) messages[groupId] = [];
     messages[groupId].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true,
         from_name: currentUser.nickname || currentUser.username
     });
-    
+
+    // 添加到会话列表
+    const groupName = groups[groupId] ? groups[groupId].name : '群组' + groupId;
+    conversations['group_' + groupId] = {
+        id: 'group_' + groupId,
+        groupId: groupId,
+        name: groupName,
+        lastMsg: content,
+        time: new Date().toISOString(),
+        isGroup: true
+    };
+
     renderMessages(groupId);
+    renderConversations();
     input.value = '';
     input.focus();
 }
@@ -408,7 +444,7 @@ function handleFileUpload(event) {
                     content: displayContent,
                     file_id: data.data.file_id,
                     file_type: isImage ? 'image' : 'file',
-                    time: formatTime(new Date()),
+                    time: new Date().toISOString(),
                     self: true
                 });
                 renderMessages(targetId);
@@ -421,6 +457,221 @@ function handleFileUpload(event) {
     };
     reader.readAsDataURL(file);
     event.target.value = '';
+}
+
+// ==================== 语音消息 ====================
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let shouldSendVoice = false;
+
+function toggleVoiceRecording() {
+    if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
+
+    // 检查浏览器是否支持
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('浏览器不支持录音功能（需要HTTPS）', 'error');
+        return;
+    }
+
+    if (isRecording) {
+        stopRecording();
+    } else {
+        startRecording();
+    }
+}
+
+function startRecording() {
+    if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            isRecording = true;
+            shouldSendVoice = true;
+            audioChunks = [];
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = () => {
+                stream.getTracks().forEach(t => t.stop());
+                if (shouldSendVoice) sendVoiceMessage();
+                shouldSendVoice = false;
+            };
+            mediaRecorder.start();
+            document.getElementById('voiceBtn').style.background = 'var(--red)';
+            document.getElementById('voiceBtn').style.color = '#fff';
+            showToast('正在录音，再次点击发送');
+        })
+        .catch(() => showToast('无法访问麦克风', 'error'));
+}
+
+function stopRecording() {
+    if (mediaRecorder && isRecording) {
+        isRecording = false;
+        mediaRecorder.stop();
+        document.getElementById('voiceBtn').style.background = '';
+        document.getElementById('voiceBtn').style.color = '';
+    }
+}
+
+function cancelRecording() {
+    if (mediaRecorder && isRecording) {
+        isRecording = false;
+        shouldSendVoice = false;
+        mediaRecorder.stop();
+        audioChunks = [];
+        document.getElementById('voiceBtn').style.background = '';
+        document.getElementById('voiceBtn').style.color = '';
+        showToast('录音已取消');
+    }
+}
+
+async function sendVoiceMessage() {
+    if (audioChunks.length === 0) return;
+
+    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        const displayContent = '[语音] ' + Math.round(blob.size / 1024) + 'KB';
+
+        // 上传语音文件
+        try {
+            const r = await fetch(`${API}/api/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: 'voice_' + Date.now() + '.webm',
+                    file_data: base64,
+                    from_user_id: currentUser.id,
+                    to_user_id: currentTarget < 0 ? 0 : currentTarget
+                })
+            });
+            const data = await r.json();
+            if (data.code === 0) {
+                const msg = {
+                    type: 'chat',
+                    to: currentTarget,
+                    content: displayContent,
+                    msg_type: 5,
+                    file_id: data.data.file_id
+                };
+                ws.send(JSON.stringify(msg));
+
+                if (!messages[currentTarget]) messages[currentTarget] = [];
+                messages[currentTarget].push({
+                    from: currentUser.id,
+                    content: displayContent,
+                    file_id: data.data.file_id,
+                    time: new Date().toISOString(),
+                    self: true
+                });
+                renderMessages(currentTarget);
+                showToast('语音发送成功');
+            }
+        } catch (e) { showToast('语音发送失败', 'error'); }
+    };
+    reader.readAsDataURL(blob);
+}
+
+// ==================== 视频消息 ====================
+let videoRecorder = null;
+let videoChunks = [];
+let isRecordingVideo = false;
+let videoStream = null;
+let shouldSendVideo = false;
+
+function toggleVideoRecording() {
+    if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
+
+    // 检查浏览器是否支持
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('浏览器不支持录像功能（需要HTTPS）', 'error');
+        return;
+    }
+
+    if (isRecordingVideo) {
+        stopVideoRecording();
+    } else {
+        startVideoRecording();
+    }
+}
+
+function startVideoRecording() {
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(stream => {
+            isRecordingVideo = true;
+            shouldSendVideo = true;
+            videoChunks = [];
+            videoStream = stream;
+            videoRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            videoRecorder.ondataavailable = e => videoChunks.push(e.data);
+            videoRecorder.onstop = () => {
+                stream.getTracks().forEach(t => t.stop());
+                if (shouldSendVideo) sendVideoMessage();
+                shouldSendVideo = false;
+            };
+            videoRecorder.start();
+            document.getElementById('videoBtn').style.background = 'var(--red)';
+            document.getElementById('videoBtn').style.color = '#fff';
+            showToast('正在录制视频，再次点击发送');
+        })
+        .catch(() => showToast('无法访问摄像头', 'error'));
+}
+
+function stopVideoRecording() {
+    if (videoRecorder && isRecordingVideo) {
+        isRecordingVideo = false;
+        videoRecorder.stop();
+        document.getElementById('videoBtn').style.background = '';
+        document.getElementById('videoBtn').style.color = '';
+    }
+}
+
+async function sendVideoMessage() {
+    if (videoChunks.length === 0) return;
+
+    const blob = new Blob(videoChunks, { type: 'video/webm' });
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        const displayContent = '[视频] ' + Math.round(blob.size / 1024) + 'KB';
+
+        try {
+            const r = await fetch(`${API}/api/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: 'video_' + Date.now() + '.webm',
+                    file_data: base64,
+                    from_user_id: currentUser.id,
+                    to_user_id: currentTarget < 0 ? 0 : currentTarget
+                })
+            });
+            const data = await r.json();
+            if (data.code === 0) {
+                const msg = {
+                    type: 'chat',
+                    to: currentTarget,
+                    content: displayContent,
+                    msg_type: 6,
+                    file_id: data.data.file_id
+                };
+                ws.send(JSON.stringify(msg));
+
+                if (!messages[currentTarget]) messages[currentTarget] = [];
+                messages[currentTarget].push({
+                    from: currentUser.id,
+                    content: displayContent,
+                    file_id: data.data.file_id,
+                    time: new Date().toISOString(),
+                    self: true
+                });
+                renderMessages(currentTarget);
+                showToast('视频发送成功');
+            }
+        } catch (e) { showToast('视频发送失败', 'error'); }
+    };
+    reader.readAsDataURL(blob);
 }
 
 function downloadFile(fileId) {
@@ -660,11 +911,15 @@ function renderConversations() {
 
     list.innerHTML = convArray.map(c => {
         const unread = unreadCounts[c.id] || 0;
+        const isGroup = c.isGroup;
+        const clickAction = isGroup
+            ? `startGroupChat(${c.groupId}, '${c.name}')`
+            : `startChat(${c.id}, '${c.name}')`;
         return `
-        <div class="conversation-item ${currentTarget === c.id ? 'active' : ''}"
+        <div class="conversation-item ${currentTarget === (isGroup ? -c.groupId : c.id) ? 'active' : ''}"
              data-user-id="${c.id}"
-             onclick="startChat(${c.id}, '${c.name}')">
-            <div class="avatar" style="background: ${getAvatarColor(c.id)}">${c.name[0]}</div>
+             onclick="${clickAction}">
+            <div class="avatar" style="background: ${isGroup ? 'linear-gradient(135deg, #52c41a, #73d13d)' : getAvatarColor(c.id)}">${c.name[0]}</div>
             <div class="info">
                 <div class="name">${c.name}</div>
                 <div class="last-msg">${c.lastMsg}</div>
@@ -680,18 +935,32 @@ function renderConversations() {
 function renderMessages(userId) {
     const list = document.getElementById('msg-list');
     const msgs = messages[userId] || [];
-    
+
     if (msgs.length === 0) {
         list.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>暂无消息</p></div>';
         return;
     }
-    
+
     list.innerHTML = msgs.map(m => {
         const isImage = m.content && m.content.startsWith('[图片]');
         const isFile = m.content && m.content.startsWith('[文件]');
-        
+        const isVoice = m.content && m.content.startsWith('[语音]');
+        const isVideo = m.content && m.content.startsWith('[视频]');
+
         let messageContent = '';
-        if (isImage && m.file_id) {
+        if (isVideo && m.file_id) {
+            messageContent = `
+                <div class="video-message">
+                    <video controls src="${API}/api/download?file_id=${m.file_id}" style="max-width:300px;border-radius:8px;"></video>
+                    <button class="btn-download" onclick="downloadFile(${m.file_id})" style="margin-top:4px">下载</button>
+                </div>`;
+        } else if (isVoice && m.file_id) {
+            messageContent = `
+                <div class="voice-message">
+                    <audio controls src="${API}/api/download?file_id=${m.file_id}" style="max-width:200px;"></audio>
+                    <span style="margin-left:8px;font-size:12px;color:var(--text3)">${m.content}</span>
+                </div>`;
+        } else if (isImage && m.file_id) {
             messageContent = `
                 <div class="image-message">
                     <img src="${API}/api/download?file_id=${m.file_id}" 
@@ -734,8 +1003,11 @@ function renderMessages(userId) {
             </div>
         </div>`;
     }).join('');
-    
-    list.scrollTop = list.scrollHeight;
+
+    // 只有在加载新消息时才滚动到底部，加载历史消息时保持位置
+    if (!messageLoading[userId]) {
+        list.scrollTop = list.scrollHeight;
+    }
 }
 
 function renderFriends(friends) {
@@ -770,6 +1042,10 @@ function renderGroups() {
             <button class="btn-recall" onclick="event.stopPropagation();leaveGroup(${g.id}, '${g.name}')" title="退出群组">✕</button>
         </div>
     `).join('');
+
+    // 显示提示信息
+    const ids = Object.values(groups).map(g => g.id).join(', ');
+    showToast(`你的群组ID: ${ids}`, 'info');
 }
 
 // ==================== 群组管理 ====================
@@ -786,7 +1062,7 @@ async function loadGroups() {
 }
 
 async function createGroup() {
-    const name = document.getElementById('group-name').value.trim();
+    const name = document.getElementById('new-group-name').value.trim();
     if (!name) { showToast('请输入群组名称', 'error'); return; }
 
     try {
@@ -799,8 +1075,8 @@ async function createGroup() {
         if (data.code === 0) {
             groups[data.data.id] = data.data;
             renderGroups();
-            document.getElementById('group-name').value = '';
-            showToast('群组创建成功');
+            document.getElementById('new-group-name').value = '';
+            showToast('群组创建成功，ID: ' + data.data.id);
         } else {
             showToast(data.message, 'error');
         }
@@ -1005,48 +1281,272 @@ function startChat(userId, userName) {
     loadMessageHistory(userId);
 }
 
-async function loadMessageHistory(userId) {
+let messageOffset = {};
+let messageLoading = {};
+
+async function loadMessageHistory(userId, loadMore = false) {
+    if (messageLoading[userId]) return;
+    messageLoading[userId] = true;
+
     try {
-        const r = await fetch(`${API}/api/messages/history?user_id=${currentUser.id}&target_id=${userId}`);
+        if (!loadMore) messageOffset[userId] = 0;
+        const offset = messageOffset[userId] || 0;
+
+        const r = await fetch(`${API}/api/messages/history?user_id=${currentUser.id}&target_id=${userId}&limit=50&offset=${offset}`);
         const data = await r.json();
         if (data.code === 0) {
-            messages[userId] = data.data.map(m => ({
+            const newMessages = data.data.map(m => ({
                 id: m.id,
                 from: m.from,
                 content: m.content,
                 file_id: m.file_id || null,
+                read: m.status === 1,
                 time: m.time,
                 self: m.from === currentUser.id,
                 from_name: m.from_name
-            }));
+            })).reverse();
+
+            if (loadMore && messages[userId]) {
+                messages[userId] = [...newMessages, ...messages[userId]];
+            } else {
+                messages[userId] = newMessages;
+            }
+
+            messageOffset[userId] = offset + 50;
             renderMessages(userId);
         }
     } catch (e) {
         console.error('加载历史消息失败:', e);
         if (!messages[userId]) messages[userId] = [];
         renderMessages(userId);
+    } finally {
+        messageLoading[userId] = false;
     }
+}
+
+async function markAsRead(fromUserId) {
+    try {
+        await fetch(`${API}/api/message/read`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: currentUser.id, from_user_id: fromUserId })
+        });
+    } catch (e) {}
 }
 
 function startGroupChat(groupId, groupName) {
     currentTarget = -groupId;
-    document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span>`;
+    document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span> <button class="btn-recall" onclick="showGroupMembers(${groupId})" style="margin-left:8px;font-size:11px">成员</button>`;
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
-    
-    if (!messages[groupId]) messages[groupId] = [];
-    renderMessages(groupId);
+
+    // 添加到会话列表
+    if (!conversations['group_' + groupId]) {
+        conversations['group_' + groupId] = {
+            id: 'group_' + groupId,
+            groupId: groupId,
+            name: groupName,
+            lastMsg: '',
+            time: new Date().toISOString(),
+            isGroup: true
+        };
+    }
+    renderConversations();
+
+    // 从服务器加载群组历史消息
+    loadGroupMessages(groupId);
 }
 
-function createGroup() {
-    const name = document.getElementById('new-group-name').value.trim();
-    if (!name) { showToast('请输入群组名称', 'error'); return; }
-    
-    const groupId = 1000 + Object.keys(groups).length + 1;
-    groups[groupId] = { id: groupId, name: name, members: [currentUser.id] };
-    renderGroups();
-    document.getElementById('new-group-name').value = '';
-    showToast('群组 "' + name + '" 创建成功');
+async function showGroupMembers(groupId) {
+    try {
+        const r = await fetch(`${API}/api/group/members?group_id=${groupId}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            // 检查当前用户是否是群主
+            const isOwner = data.data.some(m => m.id === currentUser.id && m.role === 1);
+
+            const dialog = document.createElement('div');
+            dialog.className = 'dialog-overlay';
+            dialog.innerHTML = `
+                <div class="dialog" style="max-width:400px">
+                    <h3>群组成员 (${data.data.length}人)</h3>
+                    <div class="member-list">
+                        ${data.data.map(m => `
+                            <div class="contact-item">
+                                <div class="avatar" style="background: ${getAvatarColor(m.id)}">${(m.nickname || m.username)[0]}</div>
+                                <span class="name">${m.nickname || m.username}</span>
+                                <div class="status ${m.online ? 'online' : ''}"></div>
+                                ${m.role === 1 ? '<span style="color:var(--primary);font-size:12px;margin-left:4px">群主</span>' : ''}
+                                ${isOwner && m.id !== currentUser.id ? `<button class="btn-recall" onclick="removeGroupMember(${groupId}, ${m.id})" style="margin-left:auto">移除</button>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="dialog-actions">
+                        ${isOwner ? `
+                            <button class="dialog-cancel" style="background:var(--red);color:#fff" onclick="dissolveGroup(${groupId})">解散群组</button>
+                            <button class="dialog-cancel" style="background:var(--primary);color:#fff" onclick="transferGroup(${groupId})">转让群组</button>
+                        ` : `<button class="dialog-cancel" onclick="leaveGroup(${groupId})">退出群组</button>`}
+                        <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">关闭</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(dialog);
+            dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+        }
+    } catch (e) { showToast('加载成员失败', 'error'); }
+}
+
+async function removeGroupMember(groupId, userId) {
+    if (!confirm('确定要移除此成员吗？')) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/remove`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: userId, operator_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('成员已移除');
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            showGroupMembers(groupId);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function dissolveGroup(groupId) {
+    if (!confirm('确定要解散此群组吗？此操作不可撤销！')) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/dissolve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('群组已解散');
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            loadGroups();
+            if (currentTarget === -groupId) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+            delete conversations['group_' + groupId];
+            renderConversations();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function leaveGroup(groupId) {
+    if (!confirm('确定要退出此群组吗？')) return;
+
+    try {
+        const r = await fetch(`${API}/api/group/leave`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: currentUser.id })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('已退出群组');
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            loadGroups();
+            if (currentTarget === -groupId) {
+                currentTarget = null;
+                document.getElementById('chat-target').innerHTML = '<span>选择会话开始聊天</span>';
+                document.getElementById('msg-list').innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>选择左侧会话开始聊天</p></div>';
+            }
+            delete conversations['group_' + groupId];
+            renderConversations();
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function transferGroup(groupId) {
+    // 获取群组成员列表
+    try {
+        const r = await fetch(`${API}/api/group/members?group_id=${groupId}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            const members = data.data.filter(m => m.id !== currentUser.id);
+            if (members.length === 0) {
+                showToast('没有其他成员可以转让', 'error');
+                return;
+            }
+
+            const dialog = document.createElement('div');
+            dialog.className = 'dialog-overlay';
+            dialog.innerHTML = `
+                <div class="dialog" style="max-width:400px">
+                    <h3>转让群组给</h3>
+                    <div class="member-list">
+                        ${members.map(m => `
+                            <div class="contact-item" onclick="confirmTransfer(${groupId}, ${m.id}, '${m.nickname || m.username}')">
+                                <div class="avatar" style="background: ${getAvatarColor(m.id)}">${(m.nickname || m.username)[0]}</div>
+                                <span class="name">${m.nickname || m.username}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="dialog-actions">
+                        <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(dialog);
+            dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+        }
+    } catch (e) { showToast('加载成员失败', 'error'); }
+}
+
+async function confirmTransfer(groupId, toUserId, toUserName) {
+    if (!confirm(`确定要将群组转让给 ${toUserName} 吗？`)) return;
+
+    document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+
+    try {
+        const r = await fetch(`${API}/api/group/transfer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, from_user_id: currentUser.id, to_user_id: toUserId })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            showToast('群组已转让给 ' + toUserName);
+            showGroupMembers(groupId);
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
+}
+
+async function loadGroupMessages(groupId) {
+    try {
+        const r = await fetch(`${API}/api/group/messages?group_id=${groupId}`);
+        const data = await r.json();
+        if (data.code === 0) {
+            messages[groupId] = data.data.map(m => ({
+                id: m.id,
+                from: m.from,
+                content: m.content,
+                time: m.time,
+                self: m.from === currentUser.id,
+                from_name: m.from_name
+            }));
+            renderMessages(groupId);
+        }
+    } catch (e) {
+        console.error('加载群组消息失败:', e);
+        if (!messages[groupId]) messages[groupId] = [];
+        renderMessages(groupId);
+    }
 }
 
 // ==================== 文件夹管理 ====================
@@ -1281,6 +1781,13 @@ function showProfileDialog(profile) {
     dialog.innerHTML = `
         <div class="dialog">
             <h3>个人资料</h3>
+            <div style="text-align:center;margin-bottom:16px;">
+                <div class="avatar" style="width:80px;height:80px;font-size:32px;margin:0 auto;cursor:pointer;background:${getAvatarColor(currentUser.id)}" onclick="document.getElementById('avatar-input').click()">
+                    ${(profile.nickname || profile.username)[0]}
+                </div>
+                <input type="file" id="avatar-input" style="display:none" accept="image/*" onchange="uploadAvatar(event)">
+                <div style="font-size:12px;color:var(--text3);margin-top:4px">点击头像更换</div>
+            </div>
             <div class="form-group">
                 <label>用户名</label>
                 <input type="text" value="${profile.username}" disabled style="opacity:0.6">
@@ -1305,6 +1812,58 @@ function showProfileDialog(profile) {
     `;
     document.body.appendChild(dialog);
     dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+}
+
+async function uploadAvatar(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { showToast('请选择图片文件', 'error'); return; }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        try {
+            const r = await fetch(`${API}/api/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: 'avatar_' + currentUser.id + '.jpg',
+                    file_data: base64,
+                    from_user_id: currentUser.id,
+                    to_user_id: 0
+                })
+            });
+            const data = await r.json();
+            if (data.code === 0) {
+                // 保存头像ID到用户资料
+                await fetch(`${API}/api/user/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: currentUser.id,
+                        avatar_id: data.data.file_id
+                    })
+                });
+                currentUser.avatar_id = data.data.file_id;
+                sessionStorage.setItem('user', JSON.stringify(currentUser));
+
+                // 更新对话框中的头像预览
+                const dialogAvatar = document.querySelector('.dialog-overlay .avatar');
+                if (dialogAvatar) {
+                    dialogAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                }
+
+                // 更新左上角头像
+                const currentAvatar = document.getElementById('currentAvatar');
+                if (currentAvatar) {
+                    currentAvatar.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                }
+
+                showToast('头像已更新');
+            }
+        } catch (e) { showToast('上传失败', 'error'); }
+    };
+    reader.readAsDataURL(file);
 }
 
 async function updateProfile() {
@@ -1381,6 +1940,21 @@ document.addEventListener('keydown', e => {
     }
     if (e.ctrlKey && e.key === 'k') { e.preventDefault(); document.getElementById('searchInput')?.focus(); }
     if (e.ctrlKey && e.key === '/') { e.preventDefault(); document.getElementById('msg-input')?.focus(); }
+});
+
+// 滚动加载更多消息
+document.addEventListener('DOMContentLoaded', () => {
+    const msgList = document.getElementById('msg-list');
+    if (msgList) {
+        msgList.addEventListener('scroll', () => {
+            if (msgList.scrollTop < 50 && currentTarget && !messageLoading[Math.abs(currentTarget)]) {
+                const userId = currentTarget < 0 ? null : currentTarget;
+                if (userId && messages[userId] && messages[userId].length > 0) {
+                    loadMessageHistory(userId, true);
+                }
+            }
+        });
+    }
 });
 
 // 输入事件 - 发送正在输入状态

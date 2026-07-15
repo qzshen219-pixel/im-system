@@ -1,4 +1,4 @@
-const API = 'http://172.22.120.246:8080';
+const API = window.location.protocol + '//' + window.location.hostname + ':8080';
 let currentUser = null;
 let ws = null;
 let currentTarget = null;
@@ -119,7 +119,7 @@ const BASE_DELAY = 1000;
 function connectWebSocket() {
     if (ws && ws.readyState === WebSocket.OPEN) return;
     
-    const wsUrl = `ws://172.22.120.246:8001`;
+    const wsUrl = `ws://${window.location.hostname}:8001`;
     ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
@@ -259,7 +259,10 @@ function receiveGroupMessage(data) {
     const groupId = data.group_id;
     const content = data.content;
     const time = data.time || new Date().toLocaleTimeString();
-    
+
+    // 忽略自己发送的消息
+    if (data.from === currentUser.id) return;
+
     if (!messages[groupId]) messages[groupId] = [];
     messages[groupId].push({
         from: data.from,
@@ -269,7 +272,7 @@ function receiveGroupMessage(data) {
         time: time,
         self: false
     });
-    
+
     if (currentTarget === -groupId) {
         renderMessages(groupId);
     } else {
@@ -297,7 +300,7 @@ function sendMessage() {
     messages[currentTarget].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true
     });
     
@@ -306,7 +309,7 @@ function sendMessage() {
             id: currentTarget,
             name: '用户' + currentTarget,
             lastMsg: content,
-            time: formatTime(new Date()),
+            time: new Date().toISOString(),
             unread: 0
         };
     } else {
@@ -332,7 +335,7 @@ function sendGroupMessage() {
     messages[groupId].push({
         from: currentUser.id,
         content: content,
-        time: formatTime(new Date()),
+        time: new Date().toISOString(),
         self: true,
         from_name: currentUser.nickname || currentUser.username
     });
@@ -390,7 +393,7 @@ function handleFileUpload(event) {
                     content: displayContent,
                     file_id: data.data.file_id,
                     file_type: isImage ? 'image' : 'file',
-                    time: formatTime(new Date()),
+                    time: new Date().toISOString(),
                     self: true
                 });
                 renderMessages(targetId);
