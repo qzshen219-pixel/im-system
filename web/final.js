@@ -456,6 +456,16 @@ let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 
+function toggleVoiceRecording() {
+    if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
+
+    if (isRecording) {
+        stopRecording();
+    } else {
+        startRecording();
+    }
+}
+
 function startRecording() {
     if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
 
@@ -966,8 +976,11 @@ function renderMessages(userId) {
             </div>
         </div>`;
     }).join('');
-    
-    list.scrollTop = list.scrollHeight;
+
+    // 只有在加载新消息时才滚动到底部，加载历史消息时保持位置
+    if (!messageLoading[userId]) {
+        list.scrollTop = list.scrollHeight;
+    }
 }
 
 function renderFriends(friends) {
