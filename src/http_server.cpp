@@ -207,6 +207,9 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/group/transfer" && methodStr == "POST") {
         response = server->handleGroupTransfer(*body);
     }
+    else if (urlStr == "/api/group/announcement" && methodStr == "POST") {
+        response = server->handleGroupAnnouncement(*body);
+    }
     else if (urlStr == "/api/group/messages" && methodStr == "GET") {
         const char *groupIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "group_id");
         int groupId = groupIdStr ? std::stoi(groupIdStr) : 0;
@@ -898,7 +901,7 @@ std::string HttpServer::handleGroupList(int userId)
         return Json::FastWriter().write(result);
     }
 
-    std::string sql = "SELECT g.id, g.name, g.owner_id FROM groups_table g "
+    std::string sql = "SELECT g.id, g.name, g.owner_id, g.announcement FROM groups_table g "
         "JOIN group_members gm ON g.id = gm.group_id "
         "WHERE gm.user_id = " + std::to_string(userId);
     m_mysql->query(sql);
@@ -909,6 +912,7 @@ std::string HttpServer::handleGroupList(int userId)
         group["id"] = std::stoi(row[0]);
         group["name"] = row[1];
         group["owner_id"] = std::stoi(row[2]);
+        group["announcement"] = row[3];
         result["data"].append(group);
     }
 
@@ -1128,6 +1132,38 @@ std::string HttpServer::handleGroupTransfer(const std::string& body)
         + " AND user_id=" + std::to_string(toUserId));
 
     return "{\"code\":0,\"message\":\"群组已转让\"}";
+}
+
+std::string HttpServer::handleGroupAnnouncement(const std::string& body)
+{
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(body, root)) {
+        return "{\"code\":1,\"message\":\"Invalid JSON\"}";
+    }
+
+    int groupId = root["group_id"].asInt();
+    int userId = root["user_id"].asInt();
+    std::string announcement = root["announcement"].asString();
+
+    if (groupId <= 0 || userId <= 0) {
+        return "{\"code\":1,\"message\":\"Invalid parameters\"}";
+    }
+
+    // 检查操作者是否是群主
+    std::string checkSql = "SELECT role FROM group_members WHERE group_id=" + std::to_string(groupId)
+        + " AND user_id=" + std::to_string(userId);
+    m_mysql->query(checkSql);
+    auto checkRows = m_mysql->getResult();
+    if (checkRows.empty() || std::stoi(checkRows[0][0]) != 1) {
+        return "{\"code\":1,\"message\":\"只有群主可以发布公告\"}";
+    }
+
+    // 更新群公告
+    std::string sql = "UPDATE groups_table SET announcement='" + announcement + "' WHERE id=" + std::to_string(groupId);
+    m_mysql->query(sql);
+
+    return "{\"code\":0,\"message\":\"群公告已更新\"}";
 }
 
 std::string HttpServer::handleGroupMessages(int groupId)

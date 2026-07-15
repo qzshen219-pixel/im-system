@@ -64,6 +64,7 @@ private:
     std::string handleGroupDissolve(const std::string& body);
     std::string handleGroupLeave(const std::string& body);
     std::string handleGroupTransfer(const std::string& body);
+    std::string handleGroupAnnouncement(const std::string& body);
     std::string handleGroupMessages(int groupId);
 
     int m_port;

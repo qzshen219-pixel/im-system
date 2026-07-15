@@ -1425,7 +1425,25 @@ async function markAsRead(fromUserId) {
 
 function startGroupChat(groupId, groupName) {
     currentTarget = -groupId;
-    document.getElementById('chat-target').innerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span> <button class="btn-recall" onclick="showGroupMembers(${groupId})" style="margin-left:8px;font-size:11px">成员</button>`;
+
+    // 获取群公告
+    const groupData = groups[groupId];
+    const announcement = groupData ? groupData.announcement : '';
+    const isOwner = groupData && groupData.owner_id === currentUser.id;
+
+    let headerHTML = `<span>${groupName}</span> <span style="font-size:12px;color:var(--text3)">(群聊)</span>`;
+    headerHTML += ` <button class="btn-recall" onclick="showGroupMembers(${groupId})" style="margin-left:8px;font-size:11px">成员</button>`;
+    if (isOwner) {
+        headerHTML += ` <button class="btn-recall" onclick="editAnnouncement(${groupId})" style="font-size:11px">公告</button>`;
+    }
+
+    document.getElementById('chat-target').innerHTML = headerHTML;
+
+    // 显示群公告
+    if (announcement) {
+        document.getElementById('chat-target').innerHTML += `<div style="font-size:11px;color:var(--text3);margin-top:4px;padding:4px 8px;background:var(--bg);border-radius:4px;">📢 ${announcement}</div>`;
+    }
+
     document.getElementById('msg-input').disabled = false;
     document.getElementById('btn-send').disabled = false;
 
@@ -1444,6 +1462,53 @@ function startGroupChat(groupId, groupName) {
 
     // 从服务器加载群组历史消息
     loadGroupMessages(groupId);
+}
+
+function editAnnouncement(groupId) {
+    const groupData = groups[groupId];
+    const currentAnnouncement = groupData ? groupData.announcement || '' : '';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'dialog-overlay';
+    dialog.innerHTML = `
+        <div class="dialog" style="max-width:400px">
+            <h3>设置群公告</h3>
+            <div class="form-group">
+                <textarea id="announcement-text" rows="3" placeholder="输入群公告内容">${currentAnnouncement}</textarea>
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-cancel" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+                <button class="dialog-confirm" onclick="saveAnnouncement(${groupId})">保存</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+}
+
+async function saveAnnouncement(groupId) {
+    const announcement = document.getElementById('announcement-text').value.trim();
+
+    try {
+        const r = await fetch(`${API}/api/group/announcement`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId, user_id: currentUser.id, announcement: announcement })
+        });
+        const data = await r.json();
+        if (data.code === 0) {
+            // 更新本地群组数据
+            if (groups[groupId]) {
+                groups[groupId].announcement = announcement;
+            }
+            showToast('群公告已更新');
+            document.querySelectorAll('.dialog-overlay').forEach(d => d.remove());
+            // 刷新群聊界面
+            startGroupChat(groupId, groups[groupId] ? groups[groupId].name : '群组');
+        } else {
+            showToast(data.message, 'error');
+        }
+    } catch (e) { showToast('网络错误', 'error'); }
 }
 
 async function showGroupMembers(groupId) {
