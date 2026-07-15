@@ -961,6 +961,13 @@ body {
     font-weight: 500;
 }
 
+.search-highlight {
+    background: var(--yellow, #ffd700);
+    color: #000;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
 /* ==================== 对话框 ==================== */
 .dialog-overlay {
     position: fixed;

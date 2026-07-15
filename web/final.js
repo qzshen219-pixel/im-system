@@ -1889,11 +1889,28 @@ function confirmMoveFile(fileId, folderId, folderName) {
 }
 
 function filterConversations() {
-    const query = document.getElementById('searchInput').value.toLowerCase();
+    const query = document.getElementById('searchInput').value;
+    const queryLower = query.toLowerCase();
+
     document.querySelectorAll('.conversation-item').forEach(item => {
-        const name = item.querySelector('.name').textContent.toLowerCase();
-        item.style.display = name.includes(query) ? 'flex' : 'none';
+        const nameEl = item.querySelector('.name');
+        const name = nameEl.textContent.toLowerCase();
+
+        if (query && name.includes(queryLower)) {
+            item.style.display = 'flex';
+            // 高亮匹配的文本
+            const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+            nameEl.innerHTML = nameEl.textContent.replace(regex, '<span class="search-highlight">$1</span>');
+        } else {
+            item.style.display = query ? 'none' : 'flex';
+            // 恢复原始文本
+            nameEl.innerHTML = nameEl.textContent;
+        }
     });
+}
+
+function escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ==================== 工具函数 ====================
