@@ -1627,6 +1627,13 @@ function showProfileDialog(profile) {
     dialog.innerHTML = `
         <div class="dialog">
             <h3>个人资料</h3>
+            <div style="text-align:center;margin-bottom:16px;">
+                <div class="avatar" style="width:80px;height:80px;font-size:32px;margin:0 auto;cursor:pointer;background:${getAvatarColor(currentUser.id)}" onclick="document.getElementById('avatar-input').click()">
+                    ${(profile.nickname || profile.username)[0]}
+                </div>
+                <input type="file" id="avatar-input" style="display:none" accept="image/*" onchange="uploadAvatar(event)">
+                <div style="font-size:12px;color:var(--text3);margin-top:4px">点击头像更换</div>
+            </div>
             <div class="form-group">
                 <label>用户名</label>
                 <input type="text" value="${profile.username}" disabled style="opacity:0.6">
@@ -1651,6 +1658,51 @@ function showProfileDialog(profile) {
     `;
     document.body.appendChild(dialog);
     dialog.addEventListener('click', e => { if (e.target === dialog) dialog.remove(); });
+}
+
+async function uploadAvatar(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { showToast('请选择图片文件', 'error'); return; }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        try {
+            const r = await fetch(`${API}/api/upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: 'avatar_' + currentUser.id + '.jpg',
+                    file_data: base64,
+                    from_user_id: currentUser.id,
+                    to_user_id: 0
+                })
+            });
+            const data = await r.json();
+            if (data.code === 0) {
+                // 保存头像ID到用户资料
+                await fetch(`${API}/api/user/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: currentUser.id,
+                        avatar_id: data.data.file_id
+                    })
+                });
+                currentUser.avatar_id = data.data.file_id;
+                sessionStorage.setItem('user', JSON.stringify(currentUser));
+                showToast('头像已更新');
+                // 刷新页面显示新头像
+                document.querySelectorAll('.avatar').forEach(a => {
+                    if (a.id === 'currentAvatar') {
+                        a.innerHTML = `<img src="${API}/api/download?file_id=${data.data.file_id}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+                    }
+                });
+            }
+        } catch (e) { showToast('上传失败', 'error'); }
+    };
+    reader.readAsDataURL(file);
 }
 
 async function updateProfile() {

@@ -161,7 +161,7 @@ void UserManager::checkTimeout()
 // 获取用户信息
 bool UserManager::getUserInfo(int userId, std::string& username, std::string& nickname)
 {
-    std::string sql = "SELECT username, nickname FROM users WHERE id = " + std::to_string(userId);
+    std::string sql = "SELECT username, nickname, avatar_id FROM users WHERE id = " + std::to_string(userId);
     m_mysql->query(sql);
     auto result = m_mysql->getResult();
 

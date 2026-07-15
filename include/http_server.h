@@ -44,7 +44,7 @@ private:
     std::string handleFriendAccept(const std::string& body);
     std::string handleFriendRemove(const std::string& body);
     std::string handleFriendPending(int userId);
-    std::string handleMessageHistory(int userId, int targetId);
+    std::string handleMessageHistory(int userId, int targetId, int limit = 50, int offset = 0);
     std::string handleMessageRecall(const std::string& body);
     std::string handleMessageForward(const std::string& body);
     std::string handleMessageReply(const std::string& body);

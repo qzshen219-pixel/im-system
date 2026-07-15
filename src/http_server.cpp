@@ -129,9 +129,13 @@ MHD_Result HttpServer::requestHandler(void *cls,
     else if (urlStr == "/api/messages/history" && methodStr == "GET") {
         const char *userIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "user_id");
         const char *targetIdStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "target_id");
+        const char *limitStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "limit");
+        const char *offsetStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "offset");
         int userId = userIdStr ? std::stoi(userIdStr) : 0;
         int targetId = targetIdStr ? std::stoi(targetIdStr) : 0;
-        response = server->handleMessageHistory(userId, targetId);
+        int limit = limitStr ? std::atoi(limitStr) : 50;
+        int offset = offsetStr ? std::atoi(offsetStr) : 0;
+        response = server->handleMessageHistory(userId, targetId, limit, offset);
     }
     else if (urlStr == "/api/message/recall" && methodStr == "POST") {
         response = server->handleMessageRecall(*body);
@@ -457,7 +461,7 @@ std::string HttpServer::handleFriendPending(int userId)
     return Json::FastWriter().write(result);
 }
 
-std::string HttpServer::handleMessageHistory(int userId, int targetId)
+std::string HttpServer::handleMessageHistory(int userId, int targetId, int limit, int offset)
 {
     Json::Value result;
     result["code"] = 0;
@@ -467,13 +471,9 @@ std::string HttpServer::handleMessageHistory(int userId, int targetId)
         return Json::FastWriter().write(result);
     }
 
-    int limit = 50;
-    int offset = 0;
-    const char *limitStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "limit");
-    const char *offsetStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "offset");
-    if (limitStr) limit = std::atoi(limitStr);
-    if (offsetStr) offset = std::atoi(offsetStr);
+    if (limit <= 0) limit = 50;
     if (limit > 100) limit = 100;
+    if (offset < 0) offset = 0;
 
     std::string sql = "SELECT id, from_user_id, to_user_id, content, msg_type, created_at, file_id, status FROM messages "
         "WHERE (from_user_id=" + std::to_string(userId) + " AND to_user_id=" + std::to_string(targetId) + ") "
@@ -700,6 +700,9 @@ std::string HttpServer::handleUserUpdate(const std::string& body)
     }
     if (root.isMember("phone")) {
         updates.push_back("phone='" + root["phone"].asString() + "'");
+    }
+    if (root.isMember("avatar_id")) {
+        updates.push_back("avatar_id=" + std::to_string(root["avatar_id"].asInt()));
     }
     
     if (updates.empty()) {
