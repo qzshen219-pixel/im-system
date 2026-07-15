@@ -460,6 +460,12 @@ let shouldSendVoice = false;
 function toggleVoiceRecording() {
     if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
 
+    // 检查浏览器是否支持
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('浏览器不支持录音功能（需要HTTPS）', 'error');
+        return;
+    }
+
     if (isRecording) {
         stopRecording();
     } else {
@@ -568,6 +574,12 @@ let shouldSendVideo = false;
 
 function toggleVideoRecording() {
     if (!currentTarget) { showToast('请先选择聊天对象', 'error'); return; }
+
+    // 检查浏览器是否支持
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast('浏览器不支持录像功能（需要HTTPS）', 'error');
+        return;
+    }
 
     if (isRecordingVideo) {
         stopVideoRecording();
