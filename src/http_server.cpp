@@ -1130,7 +1130,7 @@ std::string HttpServer::handleGroupMessages(int groupId)
     }
 
     // 群组消息存储在 messages 表中，使用 group_id 字段
-    std::string sql = "SELECT m.id, m.from_user_id, m.content, m.msg_type, m.created_at, u.username, u.nickname "
+    std::string sql = "SELECT m.id, m.from_user_id, m.content, m.msg_type, m.created_at, u.username, u.nickname, m.file_id "
         "FROM messages m JOIN users u ON m.from_user_id = u.id "
         "WHERE m.group_id = " + std::to_string(groupId) + " "
         "ORDER BY m.created_at ASC LIMIT 200";
@@ -1145,6 +1145,10 @@ std::string HttpServer::handleGroupMessages(int groupId)
         msg["msg_type"] = std::stoi(row[3]);
         msg["time"] = row[4];
         msg["from_name"] = row[6].empty() ? row[5] : row[6];
+        int fileId = std::stoi(row[7]);
+        if (fileId > 0) {
+            msg["file_id"] = fileId;
+        }
         result["data"].append(msg);
     }
 

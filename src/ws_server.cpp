@@ -184,8 +184,8 @@ void WsServer::onMessage(connection_hdl hdl, websocketpp::config::asio::message_
             std::string content = root["content"].asString();
             int msgType = root.get("msg_type", 1).asInt();
             int fileId = root.get("file_id", 0).asInt();
-            
-            m_msgHandler->handleGroupMessage(userId, groupId, content, msgType);
+
+            m_msgHandler->handleGroupMessage(userId, groupId, content, msgType, fileId);
             
             // 广播给群组成员
             Json::Value msgJson;
