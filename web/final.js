@@ -1018,6 +1018,8 @@ function renderMessages(userId) {
     }
 }
 
+let avatarCache = {};
+
 function renderFriends(friends) {
     const list = document.getElementById('friend-items');
     if (!friends || friends.length === 0) {
@@ -1026,12 +1028,47 @@ function renderFriends(friends) {
     }
     list.innerHTML = friends.map(f => `
         <div class="contact-item">
-            <div class="avatar" style="background: ${getAvatarColor(f.id)}">${(f.nickname || f.username)[0]}</div>
+            <div class="avatar" style="background: ${getAvatarColor(f.id)}" id="avatar-friend-${f.id}">${(f.nickname || f.username)[0]}</div>
             <span class="name" onclick="startChat(${f.id}, '${f.nickname || f.username}')">${f.nickname || f.username}</span>
             <div class="status ${f.online ? 'online' : ''}"></div>
             <button class="btn-recall" onclick="event.stopPropagation();removeFriend(${f.id}, '${f.nickname || f.username}')" title="删除">✕</button>
         </div>
     `).join('');
+
+    // 异步加载头像
+    friends.forEach(f => {
+        if (f.avatar_id && f.avatar_id > 0) {
+            loadFriendAvatar(f.id, f.avatar_id);
+        }
+    });
+}
+
+function loadFriendAvatar(userId, avatarId) {
+    if (avatarCache[avatarId]) {
+        applyAvatar(userId, avatarCache[avatarId]);
+        return;
+    }
+    fetch(`${API}/api/download?file_id=${avatarId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.code === 0 && data.data && data.data.file_data) {
+                avatarCache[avatarId] = data.data.file_data;
+                applyAvatar(userId, data.data.file_data);
+            }
+        })
+        .catch(() => {});
+}
+
+function applyAvatar(userId, base64Data) {
+    const avatarEl = document.getElementById(`avatar-friend-${userId}`);
+    if (avatarEl) {
+        avatarEl.innerHTML = `<img src="data:image/jpeg;base64,${base64Data}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    }
+}
+
+function getAvatarBase64(avatarId) {
+    // 返回一个占位符，实际图片异步加载
+    return '';
 }
 
 function renderGroups() {

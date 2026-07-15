@@ -296,7 +296,7 @@ std::string HttpServer::handleFriends(int userId)
     result["data"] = Json::arrayValue;
 
     // 查询好友关系表中 status='accepted' 的好友
-    std::string sql = "SELECT DISTINCT u.id, u.username, u.nickname FROM friends f "
+    std::string sql = "SELECT DISTINCT u.id, u.username, u.nickname, u.avatar_id FROM friends f "
         "JOIN users u ON (f.friend_id = u.id OR f.user_id = u.id) "
         "WHERE f.status = 'accepted' AND (f.user_id = " + std::to_string(userId) + " OR f.friend_id = " + std::to_string(userId) + ") "
         "AND u.id != " + std::to_string(userId);
@@ -308,6 +308,7 @@ std::string HttpServer::handleFriends(int userId)
         user["id"] = std::stoi(row[0]);
         user["username"] = row[1];
         user["nickname"] = row[2];
+        user["avatar_id"] = std::stoi(row[3]);
         user["online"] = m_userManager->isOnline(std::stoi(row[0]));
         result["data"].append(user);
     }
