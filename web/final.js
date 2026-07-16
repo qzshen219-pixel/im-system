@@ -707,7 +707,15 @@ function previewFile(fileId, filename) {
                 let content = '';
 
                 if (ext === 'pdf') {
-                    content = `<iframe src="data:application/pdf;base64,${base64}" style="width:80%;height:80%;border:none;border-radius:8px;"></iframe>`;
+                    // 将base64转换为blob再创建URL
+                    const byteCharacters = atob(base64);
+                    const byteArray = new Uint8Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteArray[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const blob = new Blob([byteArray], { type: 'application/pdf' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    content = `<embed src="${blobUrl}" type="application/pdf" style="width:80%;height:80%;border:none;border-radius:8px;">`;
                 } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext)) {
                     content = `<img src="data:image/${ext};base64,${base64}" style="max-width:90%;max-height:80%;border-radius:8px;">`;
                 } else if (['txt', 'md'].includes(ext)) {
