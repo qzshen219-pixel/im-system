@@ -711,8 +711,14 @@ function previewFile(fileId, filename) {
                 } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext)) {
                     content = `<img src="data:image/${ext};base64,${base64}" style="max-width:90%;max-height:80%;border-radius:8px;">`;
                 } else if (['txt', 'md'].includes(ext)) {
-                    const text = atob(base64);
-                    content = `<pre style="background:var(--bg);color:var(--text);padding:20px;border-radius:8px;max-width:80%;max-height:80%;overflow:auto;white-space:pre-wrap;">${text}</pre>`;
+                    // 正确处理UTF-8编码
+                    const byteCharacters = atob(base64);
+                    const byteArray = new Uint8Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteArray[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const text = new TextDecoder('utf-8').decode(byteArray);
+                    content = `<pre style="background:var(--bg);color:var(--text);padding:20px;border-radius:8px;max-width:80%;max-height:80%;overflow:auto;white-space:pre-wrap;font-family:monospace;">${text}</pre>`;
                 } else if (['html', 'htm'].includes(ext)) {
                     content = `<iframe src="data:text/html;base64,${base64}" style="width:80%;height:80%;border:none;border-radius:8px;background:white;"></iframe>`;
                 }
