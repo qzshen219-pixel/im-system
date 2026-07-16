@@ -1067,7 +1067,7 @@ function renderMessages(userId) {
             // 使用Promise确保DOM渲染后加载图片
             Promise.resolve().then(() => loadMessageImage(m.file_id));
         } else if (isFile && m.file_id) {
-            const fileName = m.content.replace('[文件] ', '').split('(')[0];
+            const fileName = m.content.replace('[文件] ', '').split('(')[0].trim();
             messageContent = `
                 <div class="file-message">
                     <div class="file-icon">📄</div>
