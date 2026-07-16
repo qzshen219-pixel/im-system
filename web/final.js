@@ -685,6 +685,7 @@ async function sendVideoMessage() {
 function previewFile(fileId, filename) {
     // 获取文件扩展名
     const ext = filename.split('.').pop().toLowerCase();
+    console.log('previewFile:', fileId, filename, ext);
 
     // 支持预览的文件类型
     const previewableTypes = ['pdf', 'txt', 'md', 'html', 'htm', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'];
